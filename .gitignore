@@ -1,0 +1,8 @@
+node_modules
+dist
+.env.local
+.cache
+artifacts
+__pycache__
+*.pyc
+.DS_Store
