@@ -21,7 +21,7 @@ import {
   Send,
   Clipboard
 } from 'lucide-react';
-import { getGenlayerClient } from './genlayerClient';
+import { getGenlayerClient, switchToGenlayerStudionet } from './genlayerClient';
 import { SAMPLE_CLAIM_DATA } from './data/sampleClaimData';
 
 // Initial Mock Pools & Claims for unconfigured / fallback mode
@@ -365,6 +365,7 @@ export default function App() {
   const requestMetaMaskTx = async (actionTitle) => {
     if (window.ethereum) {
       try {
+        await switchToGenlayerStudionet();
         setTxMessage(`Requesting MetaMask wallet signature for ${actionTitle}...`);
         const accs = await window.ethereum.request({ method: 'eth_requestAccounts' });
         if (!account && accs[0]) setAccount(accs[0]);
@@ -408,6 +409,7 @@ export default function App() {
   const connectWallet = async () => {
     if (window.ethereum) {
       try {
+        await switchToGenlayerStudionet();
         const accs = await window.ethereum.request({ method: 'eth_requestAccounts' });
         setAccount(accs[0]);
       } catch (err) {
