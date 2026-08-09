@@ -411,13 +411,16 @@ export default function App() {
     setCustomCriteriaList(prev => prev.filter((_, i) => i !== idx));
   };
 
-  // Helper for URL arrays
+  // Helper for URL arrays (safely spreading state object form)
   const handleUrlChange = (form, setForm, key, index, value) => {
-    const updated = [...form[key]];
-    updated[index] = value;
-    setForm({ ...setForm, [key]: updated });
+    const currentArray = (form && Array.isArray(form[key])) ? [...form[key]] : [''];
+    currentArray[index] = value;
+    setForm({ ...form, [key]: currentArray });
   };
-  const addUrlField = (form, setForm, key) => setForm({ ...setForm, [key]: [...form[key], ''] });
+  const addUrlField = (form, setForm, key) => {
+    const currentArray = (form && Array.isArray(form[key])) ? [...form[key]] : [''];
+    setForm({ ...form, [key]: [...currentArray, ''] });
+  };
 
   // Handle Create Pool (Template Guided Flow)
   const handleCreatePoolSubmit = (e) => {
@@ -503,7 +506,9 @@ export default function App() {
       return;
     }
 
-    const targetPool = pools.find(p => p.id === newClaim.pool_id) || pools[0];
+    const targetPool = (pools && pools.length > 0)
+      ? (pools.find(p => String(p.id) === String(newClaim?.pool_id)) || pools[0])
+      : { id: '0', coverage_type: 'Flight Cancellation & Delay', max_payout_per_claim: '1000', pool_balance: '15000' };
     const scenarios = PRESET_INCIDENT_SCENARIOS[targetPool.coverage_type] || [
       "Official incident claim matching pool eligibility criteria"
     ];
@@ -910,7 +915,7 @@ export default function App() {
                   {pools.map(p => (
                     <div 
                       key={p.id}
-                      className={`pool-select-card ${newClaim.pool_id === p.id ? 'selected' : ''}`}
+                      className={`pool-select-card ${String(newClaim?.pool_id) === String(p.id) ? 'selected' : ''}`}
                       onClick={() => {
                         setNewClaim({ 
                           ...newClaim, 
