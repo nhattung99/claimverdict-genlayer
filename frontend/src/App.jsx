@@ -199,6 +199,95 @@ const PRESET_CATEGORIES = [
   }
 ];
 
+const PRESET_INCIDENT_SCENARIOS = {
+  "Flight Cancellation & Delay": [
+    "Official flight cancellation by airline with no alternative within 6 hours",
+    "Flight departure delayed by more than 4 hours from original schedule",
+    "Involuntary denied boarding or missed connection due to initial carrier delay"
+  ],
+  "Amateur Sports Injury Reimbursement": [
+    "Acute joint sprain or muscle tear during registered amateur match",
+    "Accidental fracture or collision injury requiring emergency medical evaluation",
+    "Hospital outpatient treatment following competitive sports incident"
+  ],
+  "Travel & Trip Cancellation": [
+    "Trip cancellation due to sudden personal illness or severe weather warning",
+    "Carrier service suspension or non-refundable booking forfeiture",
+    "Emergency travel interruption due to immediate family emergency"
+  ],
+  "Emergency Travel Medical Insurance": [
+    "Emergency hospital admission for urgent medical treatment while abroad",
+    "Outpatient urgent clinic care for unexpected travel illness",
+    "Prescription emergency medication and diagnostic evaluation overseas"
+  ],
+  "Lost & Damaged Luggage Protection": [
+    "Baggage officially declared lost by carrier exceeding 24 hours arrival",
+    "Severe luggage container damage rendering contents unusable",
+    "Irretrievable personal belongings loss with carrier irregularity report"
+  ],
+  "Rental Vehicle Collision & Damage": [
+    "Accidental vehicle body collision damage during active rental contract",
+    "Windshield or tire structural damage on authorized rental route",
+    "Third-party parking damage recorded by rental agency inspection log"
+  ],
+  "Concert & Event Ticket Protection": [
+    "Official event cancellation notice issued by primary ticket organizer",
+    "Event postponement with no feasible rescheduled date alternative",
+    "Venue closure or artist non-appearance official refund rejection"
+  ]
+};
+
+const POOL_URL_HINTS = {
+  "Flight Cancellation & Delay": {
+    evidence: "E-ticket receipt link, official airline cancellation email confirmation",
+    reference: "Public flight status page (FlightStats, FlightRadar24), official airport departure board link"
+  },
+  "Amateur Sports Injury Reimbursement": {
+    evidence: "Hospital outpatient receipt link, emergency clinic evaluation report",
+    reference: "Official event registration portal link, public sports tournament schedule"
+  },
+  "Travel & Trip Cancellation": {
+    evidence: "Non-refundable booking invoice link, travel cancellation receipt",
+    reference: "Public weather bulletin link, official government travel advisory notice"
+  },
+  "Emergency Travel Medical Insurance": {
+    evidence: "Hospital admission summary link, itemized pharmacy invoice",
+    reference: "Accredited international hospital directory, public health ministry medical registry"
+  },
+  "Lost & Damaged Luggage Protection": {
+    evidence: "Airline Property Irregularity Report (PIR) link, damaged luggage photo receipt link",
+    reference: "Carrier baggage tracking status page, official airline baggage policy bulletin"
+  },
+  "Rental Vehicle Collision & Damage": {
+    evidence: "Rental contract receipt link, repair shop invoice photo link",
+    reference: "Official police incident report registry, rental agency damage log portal"
+  },
+  "Concert & Event Ticket Protection": {
+    evidence: "Original e-ticket purchase confirmation link, vendor refund denial email link",
+    reference: "Primary ticketing vendor event status page, official venue announcement post"
+  }
+};
+
+const DISPUTE_REASON_PRESETS = [
+  "Attached newly verified independent reference source",
+  "Rectified previous evidence URL format / document link",
+  "Provided official hospital / airline / carrier verification log",
+  "Submitted updated itemized cost statement"
+];
+
+// Reusable Free Gas Notice Component
+const FreeGasNotice = ({ style }) => (
+  <div className="notice-banner-free" style={style}>
+    <span style={{ fontSize: '18px' }}>💰</span>
+    <div>
+      <strong style={{ fontSize: '13px', color: '#f8fafc' }}>Free to Use</strong>
+      <div style={{ fontSize: '12px', color: '#cbd5e1', marginTop: '2px' }}>
+        Free to use — you only pay GenLayer network gas fees when signing transactions via MetaMask. No platform fees or hidden cuts.
+      </div>
+    </div>
+  </div>
+);
+
 export default function App() {
   // Config & State
   const [account, setAccount] = useState(null);
@@ -230,7 +319,7 @@ export default function App() {
   const [showCustomInput, setShowCustomInput] = useState(false);
   const [customCriteriaList, setCustomCriteriaList] = useState([]);
 
-  // Form Inputs
+  // Form Inputs & Selection Controls
   const [newPool, setNewPool] = useState({
     coverage_type: PRESET_CATEGORIES[0].coverage_type,
     criteria: PRESET_CATEGORIES[0].criteria_presets,
@@ -238,6 +327,10 @@ export default function App() {
   });
 
   const [depositAmount, setDepositAmount] = useState('');
+
+  // Submit Claim Selection State
+  const [selectedIncidentRadio, setSelectedIncidentRadio] = useState(0);
+  const [showCustomIncidentText, setShowCustomIncidentText] = useState(false);
 
   const [newClaim, setNewClaim] = useState({
     pool_id: '0',
@@ -249,6 +342,27 @@ export default function App() {
 
   const [additionalEvidence, setAdditionalEvidence] = useState(['']);
   const [additionalReference, setAdditionalReference] = useState(['']);
+  const [selectedDisputeReasons, setSelectedDisputeReasons] = useState({ 0: true, 1: true });
+
+  // Clipboard Paste Helper
+  const handlePasteClipboard = async (onSuccess) => {
+    try {
+      if (navigator.clipboard && navigator.clipboard.readText) {
+        const text = await navigator.clipboard.readText();
+        if (text && text.trim()) {
+          let trimmed = text.trim();
+          if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
+            trimmed = 'https://' + trimmed;
+          }
+          onSuccess(trimmed);
+        }
+      } else {
+        alert("Clipboard access disabled or unsupported. Please press Ctrl+V to paste.");
+      }
+    } catch (err) {
+      alert("Unable to read clipboard: " + err.message);
+    }
+  };
 
   // Connect Wallet
   const connectWallet = async () => {
@@ -388,30 +502,41 @@ export default function App() {
       return;
     }
 
-    const targetPool = pools.find(p => p.id === newClaim.pool_id);
+    const targetPool = pools.find(p => p.id === newClaim.pool_id) || pools[0];
+    const scenarios = PRESET_INCIDENT_SCENARIOS[targetPool.coverage_type] || [
+      "Official incident claim matching pool eligibility criteria"
+    ];
+
+    let finalDesc = scenarios[selectedIncidentRadio] || scenarios[0];
+    if (showCustomIncidentText && newClaim.description && newClaim.description.trim()) {
+      finalDesc += ` (Note: ${newClaim.description.trim()})`;
+    }
+
+    const claimedVal = newClaim.amount || String(Math.round(parseFloat(targetPool.max_payout_per_claim) * 0.5));
     const poolBal = parseFloat(targetPool ? targetPool.pool_balance : 0);
-    const claimed = parseFloat(newClaim.amount);
+    const claimedNum = parseFloat(claimedVal);
 
     const createdClaim = {
       id: String(claims.length),
       pool_id: newClaim.pool_id,
       claimant: account || "0xClaimantWallet",
-      claimed_amount: newClaim.amount,
-      incident_description: newClaim.description,
+      claimed_amount: claimedVal,
+      incident_description: finalDesc,
       evidence_urls: validEvidence,
       reference_urls: validReference,
-      status: poolBal < claimed ? "REJECTED_NO_FUNDS" : "SUBMITTED",
+      status: poolBal < claimedNum ? "REJECTED_NO_FUNDS" : "SUBMITTED",
       compliance_pct: 0,
       confidence: 0,
       payout_amount: "0",
-      verdict_reason: poolBal < claimed ? "Insufficient policy pool balance in treasury" : "Awaiting AI consensus resolution",
+      verdict_reason: poolBal < claimedNum ? "Insufficient policy pool balance in treasury" : "Awaiting AI consensus resolution",
       paid_out: false
     };
 
     setClaims([createdClaim, ...claims]);
     setNewClaim({ pool_id: '0', amount: '', description: '', evidence_urls: [''], reference_urls: ['', ''] });
+    setShowCustomIncidentText(false);
     setActiveTab('claims');
-    setTxMessage("Claim filed successfully! Ready for AI evaluation.");
+    setTxMessage(`Claim #${createdClaim.id} submitted successfully to Pool #${createdClaim.pool_id}!`);
     setTimeout(() => setTxMessage(null), 4000);
   };
 
@@ -454,14 +579,24 @@ export default function App() {
     e.preventDefault();
     if (!selectedClaimForDetail) return;
 
+    const validEv = additionalEvidence.filter(u => u.trim() !== '');
+    const validRef = additionalReference.filter(u => u.trim() !== '');
+
+    if (validEv.length === 0 && validRef.length === 0) {
+      alert("Please provide at least 1 new evidence or reference verification URL.");
+      return;
+    }
+
+    const selectedReasonsText = DISPUTE_REASON_PRESETS.filter((_, idx) => selectedDisputeReasons[idx]).join('; ');
+
     setClaims(claims.map(c => {
       if (c.id === selectedClaimForDetail.id) {
         return {
           ...c,
-          evidence_urls: [...c.evidence_urls, ...additionalEvidence.filter(u => u.trim() !== '')],
-          reference_urls: [...c.reference_urls, ...additionalReference.filter(u => u.trim() !== '')],
+          evidence_urls: [...c.evidence_urls, ...validEv],
+          reference_urls: [...c.reference_urls, ...validRef],
           status: "SUBMITTED",
-          verdict_reason: "Supplemental evidence attached. Queued for re-assessment."
+          verdict_reason: `Supplemental evidence attached (${selectedReasonsText || 'New evidence links provided'}). Re-queued for AI evaluation.`
         };
       }
       return c;
@@ -470,7 +605,7 @@ export default function App() {
     setShowEvidenceModal(false);
     setAdditionalEvidence(['']);
     setAdditionalReference(['']);
-    setTxMessage("Supplemental evidence attached! Claim re-queued for AI evaluation.");
+    setTxMessage(`Supplemental evidence attached to Claim #${selectedClaimForDetail.id}! Re-queued for AI evaluation.`);
     setTimeout(() => setTxMessage(null), 4000);
   };
 
@@ -755,9 +890,9 @@ export default function App() {
         </div>
       )}
 
-      {/* TAB 3: FILE CLAIM FORM */}
+      {/* TAB 3: FILE CLAIM FORM (PRESET CARDS & CLIPBOARD HELPERS) */}
       {activeTab === 'submit' && (
-        <div style={{ maxWidth: '720px', margin: '0 auto' }}>
+        <div style={{ maxWidth: '780px', margin: '0 auto' }}>
           <div className="card">
             <div className="card-header">
               <h2 className="card-title">
@@ -767,98 +902,193 @@ export default function App() {
             </div>
 
             <form onSubmit={handleSubmitClaim}>
+              {/* Select Policy Pool (Clickable Cards) */}
               <div className="form-group">
-                <label className="form-label">Select Policy Pool *</label>
-                <select 
-                  className="form-select"
-                  value={newClaim.pool_id}
-                  onChange={e => setNewClaim({ ...newClaim, pool_id: e.target.value })}
-                >
+                <label className="form-label" style={{ marginBottom: '10px' }}>Select Policy Pool *</label>
+                <div className="pool-select-grid">
                   {pools.map(p => (
-                    <option key={p.id} value={p.id}>
-                      Pool #{p.id} — {p.coverage_type} (Balance: {p.pool_balance} GEN)
-                    </option>
+                    <div 
+                      key={p.id}
+                      className={`pool-select-card ${newClaim.pool_id === p.id ? 'selected' : ''}`}
+                      onClick={() => {
+                        setNewClaim({ 
+                          ...newClaim, 
+                          pool_id: p.id,
+                          amount: String(Math.round(parseFloat(p.max_payout_per_claim) * 0.5))
+                        });
+                        setSelectedIncidentRadio(0);
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                        <span className="badge badge-resolved" style={{ fontSize: '10px' }}>POOL #{p.id}</span>
+                        <span style={{ fontSize: '11px', color: 'var(--accent-cyan)', fontWeight: 700 }}>{p.pool_balance} GEN</span>
+                      </div>
+                      <h4 style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-main)', marginBottom: '4px' }}>{p.coverage_type}</h4>
+                      <span style={{ fontSize: '11px', color: 'var(--text-subtle)' }}>Max Payout: {p.max_payout_per_claim} GEN</span>
+                    </div>
                   ))}
-                </select>
+                </div>
               </div>
 
-              <div className="form-group">
-                <label className="form-label">Claimed Amount (GEN) *</label>
-                <input 
-                  type="number"
-                  placeholder="e.g. 800"
-                  className="form-input"
-                  value={newClaim.amount}
-                  onChange={e => setNewClaim({ ...newClaim, amount: e.target.value })}
-                  required
-                />
-              </div>
+              {/* Incident Scenario Radio Options */}
+              {(() => {
+                const targetPool = pools.find(p => p.id === newClaim.pool_id) || pools[0];
+                const scenarios = PRESET_INCIDENT_SCENARIOS[targetPool.coverage_type] || [
+                  "Official incident claim matching policy criteria"
+                ];
+                const hints = POOL_URL_HINTS[targetPool.coverage_type] || {
+                  evidence: "Official invoice, loss photo, carrier receipt link",
+                  reference: "Public status verification page, official bulletin link"
+                };
 
-              <div className="form-group">
-                <label className="form-label">Incident Description & Statement *</label>
-                <textarea 
-                  placeholder="Describe the incident clearly (e.g. Flight VN123 cancelled on Aug 8 due to weather warning...)"
-                  className="form-textarea"
-                  value={newClaim.description}
-                  onChange={e => setNewClaim({ ...newClaim, description: e.target.value })}
-                  required
-                />
-              </div>
+                return (
+                  <>
+                    <div className="form-group">
+                      <label className="form-label" style={{ marginBottom: '10px' }}>Incident Type Scenario *</label>
+                      <div className="incident-radio-list">
+                        {scenarios.map((sc, idx) => (
+                          <div 
+                            key={idx}
+                            className={`incident-radio-item ${selectedIncidentRadio === idx ? 'selected' : ''}`}
+                            onClick={() => setSelectedIncidentRadio(idx)}
+                          >
+                            <input 
+                              type="radio" 
+                              name="incidentScenario"
+                              className="incident-radio-input"
+                              checked={selectedIncidentRadio === idx}
+                              onChange={() => setSelectedIncidentRadio(idx)}
+                            />
+                            <span style={{ fontSize: '13px', color: 'var(--text-main)', lineHeight: 1.4 }}>{sc}</span>
+                          </div>
+                        ))}
+                      </div>
 
-              {/* Evidence URLs */}
-              <div className="form-group">
-                <label className="form-label">Claimant Evidence URLs (Receipts, Tickets, Reports - Min 1) *</label>
-                {newClaim.evidence_urls.map((url, idx) => (
-                  <input 
-                    key={idx}
-                    type="url"
-                    placeholder="https://example.com/receipt.pdf"
-                    className="form-input"
-                    style={{ marginBottom: '8px' }}
-                    value={url}
-                    onChange={e => handleUrlChange(newClaim, setNewClaim, 'evidence_urls', idx, e.target.value)}
-                    required={idx === 0}
-                  />
-                ))}
-                <button 
-                  type="button" 
-                  className="btn btn-secondary" 
-                  style={{ fontSize: '12px', padding: '4px 10px' }}
-                  onClick={() => addUrlField(newClaim, setNewClaim, 'evidence_urls')}
-                >
-                  + Add Evidence URL
-                </button>
-              </div>
+                      {!showCustomIncidentText ? (
+                        <button 
+                          type="button" 
+                          className="btn btn-secondary" 
+                          style={{ fontSize: '12px', padding: '4px 12px' }}
+                          onClick={() => setShowCustomIncidentText(true)}
+                        >
+                          ➕ Add Additional Detail Note (Optional)
+                        </button>
+                      ) : (
+                        <div style={{ marginTop: '10px' }}>
+                          <input 
+                            type="text" 
+                            placeholder="Optional additional detail (e.g. Flight VN123, Ticket #99120)..." 
+                            className="form-input"
+                            value={newClaim.description}
+                            onChange={e => setNewClaim({ ...newClaim, description: e.target.value })}
+                          />
+                        </div>
+                      )}
+                    </div>
 
-              {/* Reference Verification URLs */}
-              <div className="form-group">
-                <label className="form-label">
-                  Independent Reference Verification URLs (Min 2 Required) *
-                  <span style={{ display: 'block', fontSize: '11px', color: 'var(--text-subtle)' }}>
-                    Public flight status, weather reports, official hospital registry, public news feeds
-                  </span>
-                </label>
-                {newClaim.reference_urls.map((url, idx) => (
-                  <input 
-                    key={idx}
-                    type="url"
-                    placeholder={idx === 0 ? "https://flightstats.com/status/123" : "https://weather.gov/report/123"}
-                    className="form-input"
-                    style={{ marginBottom: '8px' }}
-                    value={url}
-                    onChange={e => handleUrlChange(newClaim, setNewClaim, 'reference_urls', idx, e.target.value)}
-                    required={idx < 2}
-                  />
-                ))}
-                <button 
-                  type="button" 
-                  className="btn btn-secondary" 
-                  style={{ fontSize: '12px', padding: '4px 10px' }}
-                  onClick={() => addUrlField(newClaim, setNewClaim, 'reference_urls')}
-                >
-                  + Add Reference Verification URL
-                </button>
-              </div>
+                    {/* Claimed Amount Chips & Input */}
+                    <div className="form-group">
+                      <label className="form-label">Claimed Amount (GEN) *</label>
+                      <div className="preset-chips-row">
+                        {[0.25, 0.5, 0.75, 1.0].map(pct => {
+                          const maxCap = parseFloat(targetPool.max_payout_per_claim || 1000);
+                          const val = String(Math.round(maxCap * pct));
+                          return (
+                            <button 
+                              key={pct}
+                              type="button"
+                              className={`preset-chip ${newClaim.amount === val ? 'active' : ''}`}
+                              onClick={() => setNewClaim({ ...newClaim, amount: val })}
+                            >
+                              {pct * 100}% ({val} GEN)
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <input 
+                        type="number"
+                        placeholder="Enter custom claimed amount"
+                        className="form-input"
+                        value={newClaim.amount}
+                        onChange={e => setNewClaim({ ...newClaim, amount: e.target.value })}
+                        required
+                      />
+                    </div>
+
+                    {/* Evidence URLs with Clipboard Paste Button & Contextual Hint */}
+                    <div className="form-group">
+                      <label className="form-label">Claimant Evidence URLs (Min 1 Required) *</label>
+                      {newClaim.evidence_urls.map((url, idx) => (
+                        <div key={idx} className="url-input-wrapper">
+                          <input 
+                            type="url"
+                            placeholder="https://example.com/receipt.pdf"
+                            className="form-input"
+                            value={url}
+                            onChange={e => handleUrlChange(newClaim, setNewClaim, 'evidence_urls', idx, e.target.value)}
+                            required={idx === 0}
+                          />
+                          <button 
+                            type="button" 
+                            className="paste-btn"
+                            onClick={() => handlePasteClipboard((pasted) => handleUrlChange(newClaim, setNewClaim, 'evidence_urls', idx, pasted))}
+                          >
+                            <Clipboard size={14} /> Paste
+                          </button>
+                        </div>
+                      ))}
+                      <div className="url-hint">
+                        💡 <strong>Suggested Evidence:</strong> {hints.evidence}
+                      </div>
+                      <button 
+                        type="button" 
+                        className="btn btn-secondary" 
+                        style={{ fontSize: '12px', padding: '4px 10px' }}
+                        onClick={() => addUrlField(newClaim, setNewClaim, 'evidence_urls')}
+                      >
+                        + Add Evidence URL
+                      </button>
+                    </div>
+
+                    {/* Reference Verification URLs with Clipboard Paste Button & Contextual Hint */}
+                    <div className="form-group">
+                      <label className="form-label">Independent Reference Verification URLs (Min 2 Required) *</label>
+                      {newClaim.reference_urls.map((url, idx) => (
+                        <div key={idx} className="url-input-wrapper">
+                          <input 
+                            type="url"
+                            placeholder={idx === 0 ? "https://flightstats.com/status/123" : "https://weather.gov/report/123"}
+                            className="form-input"
+                            value={url}
+                            onChange={e => handleUrlChange(newClaim, setNewClaim, 'reference_urls', idx, e.target.value)}
+                            required={idx < 2}
+                          />
+                          <button 
+                            type="button" 
+                            className="paste-btn"
+                            onClick={() => handlePasteClipboard((pasted) => handleUrlChange(newClaim, setNewClaim, 'reference_urls', idx, pasted))}
+                          >
+                            <Clipboard size={14} /> Paste
+                          </button>
+                        </div>
+                      ))}
+                      <div className="url-hint">
+                        💡 <strong>Suggested Reference Sources:</strong> {hints.reference}
+                      </div>
+                      <button 
+                        type="button" 
+                        className="btn btn-secondary" 
+                        style={{ fontSize: '12px', padding: '4px 10px' }}
+                        onClick={() => addUrlField(newClaim, setNewClaim, 'reference_urls')}
+                      >
+                        + Add Reference Verification URL
+                      </button>
+                    </div>
+                  </>
+                );
+              })()}
+
+              <FreeGasNotice style={{ marginTop: '20px' }} />
 
               <button type="submit" className="btn btn-cyan" style={{ width: '100%', marginTop: '10px' }}>
                 <Send size={18} />
@@ -1128,16 +1358,7 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Free Notice Banner */}
-                <div className="notice-banner-free">
-                  <span style={{ fontSize: '20px' }}>💰</span>
-                  <div>
-                    <strong>Free Policy Pool Creation</strong>
-                    <div style={{ fontSize: '12px', opacity: 0.9, marginTop: '2px' }}>
-                      You only pay standard GenLayer network gas fees when signing the transaction. No platform fees or hidden cuts.
-                    </div>
-                  </div>
-                </div>
+                <FreeGasNotice style={{ marginBottom: '16px' }} />
 
                 <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
                   <button type="button" className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setCreateStep(2)}>
@@ -1158,15 +1379,36 @@ export default function App() {
         <div className="modal-overlay">
           <div className="modal-content">
             <div className="modal-header">
-              <h3>Fund Pool #{selectedPoolForDeposit.id}</h3>
+              <h3>Fund Pool #{selectedPoolForDeposit.id} ({selectedPoolForDeposit.coverage_type})</h3>
               <button className="btn btn-secondary" onClick={() => setShowDepositModal(false)}>✕</button>
             </div>
             <form onSubmit={handleDepositSubmit}>
               <div className="form-group">
                 <label className="form-label">Deposit Native GEN Amount *</label>
+                <div className="preset-chips-row">
+                  {['500', '1000', '5000', '10000'].map(val => (
+                    <button 
+                      key={val}
+                      type="button"
+                      className={`preset-chip ${depositAmount === val ? 'active' : ''}`}
+                      onClick={() => setDepositAmount(val)}
+                    >
+                      {val} GEN
+                    </button>
+                  ))}
+                  {selectedPoolForDeposit.pool_balance && parseFloat(selectedPoolForDeposit.pool_balance) > 0 && (
+                    <button 
+                      type="button"
+                      className="preset-chip"
+                      onClick={() => setDepositAmount(String(Math.round(parseFloat(selectedPoolForDeposit.pool_balance) * 0.5)))}
+                    >
+                      +50% Match
+                    </button>
+                  )}
+                </div>
                 <input 
                   type="number" 
-                  placeholder="5000" 
+                  placeholder="Enter custom deposit amount" 
                   className="form-input"
                   value={depositAmount}
                   onChange={e => setDepositAmount(e.target.value)}
@@ -1174,9 +1416,11 @@ export default function App() {
                 />
               </div>
 
-              <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '16px' }}>
-                GEN will be deposited directly into the <strong>Treasury Intelligent Contract</strong> for this pool.
+              <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '16px' }}>
+                Native GEN will be deposited directly into the <strong>Treasury Intelligent Contract</strong> for Pool #{selectedPoolForDeposit.id}.
               </p>
+
+              <FreeGasNotice style={{ marginBottom: '16px' }} />
 
               <button type="submit" className="btn btn-cyan" style={{ width: '100%' }}>
                 Deposit GEN to Treasury
@@ -1237,43 +1481,91 @@ export default function App() {
             </div>
 
             <form onSubmit={handleAddEvidenceSubmit}>
+              {/* Checkbox Dispute Reasons */}
+              <div className="form-group">
+                <label className="form-label" style={{ marginBottom: '10px' }}>Re-submission Reason / Rectification *</label>
+                <div className="criteria-checkbox-list">
+                  {DISPUTE_REASON_PRESETS.map((reason, idx) => (
+                    <div 
+                      key={idx}
+                      className={`criteria-checkbox-item ${selectedDisputeReasons[idx] ? 'checked' : ''}`}
+                      onClick={() => setSelectedDisputeReasons(prev => ({ ...prev, [idx]: !prev[idx] }))}
+                    >
+                      <input 
+                        type="checkbox"
+                        className="criteria-checkbox-input"
+                        checked={!!selectedDisputeReasons[idx]}
+                        onChange={() => {}}
+                      />
+                      <span className="criteria-checkbox-text">{reason}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Additional Evidence URLs */}
               <div className="form-group">
                 <label className="form-label">Additional Evidence URLs</label>
                 {additionalEvidence.map((u, idx) => (
-                  <input 
-                    key={idx}
-                    type="url"
-                    placeholder="https://example.com/medical_report_signed.pdf"
-                    className="form-input"
-                    style={{ marginBottom: '8px' }}
-                    value={u}
-                    onChange={e => {
-                      const updated = [...additionalEvidence];
-                      updated[idx] = e.target.value;
-                      setAdditionalEvidence(updated);
-                    }}
-                  />
+                  <div key={idx} className="url-input-wrapper">
+                    <input 
+                      type="url"
+                      placeholder="https://example.com/medical_report_signed.pdf"
+                      className="form-input"
+                      value={u}
+                      onChange={e => {
+                        const updated = [...additionalEvidence];
+                        updated[idx] = e.target.value;
+                        setAdditionalEvidence(updated);
+                      }}
+                    />
+                    <button 
+                      type="button" 
+                      className="paste-btn"
+                      onClick={() => handlePasteClipboard((pasted) => {
+                        const updated = [...additionalEvidence];
+                        updated[idx] = pasted;
+                        setAdditionalEvidence(updated);
+                      })}
+                    >
+                      <Clipboard size={14} /> Paste
+                    </button>
+                  </div>
                 ))}
               </div>
 
+              {/* Additional Reference URLs */}
               <div className="form-group">
                 <label className="form-label">Additional Independent Verification URLs</label>
                 {additionalReference.map((u, idx) => (
-                  <input 
-                    key={idx}
-                    type="url"
-                    placeholder="https://hospital-registry.org/verify/doc_991"
-                    className="form-input"
-                    style={{ marginBottom: '8px' }}
-                    value={u}
-                    onChange={e => {
-                      const updated = [...additionalReference];
-                      updated[idx] = e.target.value;
-                      setAdditionalReference(updated);
-                    }}
-                  />
+                  <div key={idx} className="url-input-wrapper">
+                    <input 
+                      type="url"
+                      placeholder="https://hospital-registry.org/verify/doc_991"
+                      className="form-input"
+                      value={u}
+                      onChange={e => {
+                        const updated = [...additionalReference];
+                        updated[idx] = e.target.value;
+                        setAdditionalReference(updated);
+                      }}
+                    />
+                    <button 
+                      type="button" 
+                      className="paste-btn"
+                      onClick={() => handlePasteClipboard((pasted) => {
+                        const updated = [...additionalReference];
+                        updated[idx] = pasted;
+                        setAdditionalReference(updated);
+                      })}
+                    >
+                      <Clipboard size={14} /> Paste
+                    </button>
+                  </div>
                 ))}
               </div>
+
+              <FreeGasNotice style={{ marginBottom: '16px' }} />
 
               <button type="submit" className="btn btn-primary" style={{ width: '100%' }}>
                 Re-submit Claim for AI Assessment
@@ -1282,6 +1574,11 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* APP FOOTER WITH REUSABLE NOTICE */}
+      <footer style={{ marginTop: '60px', paddingTop: '20px', borderTop: '1px solid var(--border-glass)' }}>
+        <FreeGasNotice style={{ marginBottom: 0 }} />
+      </footer>
     </div>
   );
 }
