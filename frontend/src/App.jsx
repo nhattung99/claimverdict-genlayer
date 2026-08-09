@@ -22,6 +22,7 @@ import {
   Clipboard
 } from 'lucide-react';
 import { getGenlayerClient } from './genlayerClient';
+import { SAMPLE_CLAIM_DATA } from './data/sampleClaimData';
 
 // Initial Mock Pools & Claims for unconfigured / fallback mode
 const INITIAL_DEMO_POOLS = [
@@ -344,6 +345,21 @@ export default function App() {
   const [additionalEvidence, setAdditionalEvidence] = useState(['']);
   const [additionalReference, setAdditionalReference] = useState(['']);
   const [selectedDisputeReasons, setSelectedDisputeReasons] = useState({ 0: true, 1: true });
+
+  // Sample Data Popover & Helper State
+  const [showSamplePopover, setShowSamplePopover] = useState(false);
+
+  const handleApplySample = (sampleSet) => {
+    if (!sampleSet) return;
+    setNewClaim(prev => ({
+      ...prev,
+      evidence_urls: [...(sampleSet.evidenceUrls || [''])],
+      reference_urls: [...(sampleSet.referenceUrls || ['', ''])]
+    }));
+    setShowSamplePopover(false);
+    setTxMessage(`Đã điền dữ liệu mẫu: "${sampleSet.label}"!`);
+    setTimeout(() => setTxMessage(null), 4000);
+  };
 
   // Clipboard Paste Helper
   const handlePasteClipboard = async (onSuccess) => {
@@ -1024,6 +1040,44 @@ export default function App() {
                         onChange={e => setNewClaim({ ...newClaim, amount: e.target.value })}
                         required
                       />
+                    </div>
+
+                    {/* Sample Data Helper Row */}
+                    <div className="sample-data-header-row">
+                      <button 
+                        type="button" 
+                        className="sample-data-btn"
+                        onClick={() => setShowSamplePopover(!showSamplePopover)}
+                      >
+                        🧪 Dùng dữ liệu mẫu để test
+                      </button>
+                      <span className="sample-warning-text">
+                        ⚠️ Chỉ dùng để test/demo — khi nộp claim thật, dùng bằng chứng thật của bạn.
+                      </span>
+
+                      {showSamplePopover && (() => {
+                        const samples = SAMPLE_CLAIM_DATA[coverageType] 
+                          || SAMPLE_CLAIM_DATA[targetPool?.coverage_type] 
+                          || SAMPLE_CLAIM_DATA["Flight Cancellation & Delay"];
+
+                        return (
+                          <div className="sample-popover">
+                            <div style={{ fontSize: '11px', color: 'var(--text-subtle)', padding: '4px 8px 8px', fontWeight: 600 }}>
+                              BỘ MẪU CHO ({coverageType}):
+                            </div>
+                            {samples.map((s, idx) => (
+                              <div 
+                                key={idx} 
+                                className="sample-popover-item"
+                                onClick={() => handleApplySample(s)}
+                              >
+                                <span>{s.label}</span>
+                                <span style={{ fontSize: '11px', color: 'var(--accent-cyan)', fontWeight: 600 }}>Áp dụng →</span>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()}
                     </div>
 
                     {/* Evidence URLs with Clipboard Paste Button & Contextual Hint */}
