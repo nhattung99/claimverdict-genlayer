@@ -4,7 +4,7 @@
 const CATEGORY_SAMPLES = {
   "Flight Cancellation & Delay": [
     {
-      label: "Chuyến bay bị huỷ — mẫu 1",
+      label: "Cancelled Flight Claim — Sample 1",
       evidenceUrls: [
         "https://www.federalregister.gov/documents/2024/04/26/2024-07177/refunds-and-other-consumer-protections",
       ],
@@ -14,7 +14,7 @@ const CATEGORY_SAMPLES = {
       ],
     },
     {
-      label: "Chuyến bay trễ >4 giờ — mẫu 2",
+      label: "Flight Delay Exceeding 4 Hours — Sample 2",
       evidenceUrls: [
         "https://www.airhelp.com/en/flight-rights-usa/",
       ],
@@ -24,7 +24,7 @@ const CATEGORY_SAMPLES = {
       ],
     },
     {
-      label: "Không có chuyến thay thế — mẫu 3",
+      label: "No Alternative Carrier Connection — Sample 3",
       evidenceUrls: [
         "https://www.squaremouth.com/travel-advice/airline-passenger-rights",
       ],
@@ -37,7 +37,7 @@ const CATEGORY_SAMPLES = {
 
   "Baggage Loss/Delay": [
     {
-      label: "Hành lý thất lạc — mẫu 1",
+      label: "Lost Baggage Official Report — Sample 1",
       evidenceUrls: [
         "https://www.findlaw.com/consumer/travel-rules-and-rights/lost-baggage-compensation-and-the-law.html",
       ],
@@ -47,7 +47,7 @@ const CATEGORY_SAMPLES = {
       ],
     },
     {
-      label: "Hành lý trễ >12 giờ — mẫu 2",
+      label: "Delayed Luggage Exceeding 12 Hours — Sample 2",
       evidenceUrls: [
         "https://www.nerdwallet.com/travel/learn/delayed-baggage-compensation-broken-down-by-airline",
       ],
@@ -57,7 +57,7 @@ const CATEGORY_SAMPLES = {
       ],
     },
     {
-      label: "Hành lý bị hư hỏng — mẫu 3",
+      label: "Damaged Luggage Reimbursement — Sample 3",
       evidenceUrls: [
         "https://www.transportation.gov/briefing-room/emirates-fined-improperly-limiting-reimbursements-delayed-baggage",
       ],
@@ -70,7 +70,7 @@ const CATEGORY_SAMPLES = {
 
   "Trip Cancellation": [
     {
-      label: "Huỷ chuyến do cảnh báo an ninh — mẫu 1",
+      label: "Trip Cancelled due to Travel Advisory — Sample 1",
       evidenceUrls: [
         "https://www.usa.gov/travel-advisory",
       ],
@@ -80,7 +80,7 @@ const CATEGORY_SAMPLES = {
       ],
     },
     {
-      label: "Huỷ chuyến do thay đổi lịch trình quốc tế — mẫu 2",
+      label: "International Schedule Modification — Sample 2",
       evidenceUrls: [
         "https://travel.state.gov/en/international-travel.html",
       ],
@@ -90,7 +90,7 @@ const CATEGORY_SAMPLES = {
       ],
     },
     {
-      label: "Huỷ chuyến — mẫu 3",
+      label: "Personal Travel Emergency Cancellation — Sample 3",
       evidenceUrls: [
         "https://www.state.gov/travelers",
       ],
@@ -103,7 +103,7 @@ const CATEGORY_SAMPLES = {
 
   "Medical Emergency Abroad": [
     {
-      label: "Cấp cứu y tế khi du lịch — mẫu 1",
+      label: "Overseas Medical Emergency Care — Sample 1",
       evidenceUrls: [
         "https://www.cdc.gov/yellow-book/index.html",
       ],
@@ -113,7 +113,7 @@ const CATEGORY_SAMPLES = {
       ],
     },
     {
-      label: "Cảnh báo dịch bệnh tại điểm đến — mẫu 2",
+      label: "Travel Outbreak Health Advisory — Sample 2",
       evidenceUrls: [
         "https://www.cdc.gov/yellow-book/hcp/preparing-international-travelers/travel-medicine-resources-for-healthcare-professionals.html",
       ],
@@ -123,7 +123,7 @@ const CATEGORY_SAMPLES = {
       ],
     },
     {
-      label: "Nhập viện khẩn cấp ở nước ngoài — mẫu 3",
+      label: "Urgent Outpatient Overseas Admission — Sample 3",
       evidenceUrls: [
         "https://wwwnc.cdc.gov/travel/page/traveler-information-center",
       ],
@@ -136,7 +136,7 @@ const CATEGORY_SAMPLES = {
 
   "Amateur Sports Injury": [
     {
-      label: "Chấn thương khi thi đấu — mẫu 1",
+      label: "Amateur Tournament Injury — Sample 1",
       evidenceUrls: [
         "https://www.chop.edu/centers-programs/injury-prevention-program/sports-safety",
       ],
@@ -146,7 +146,7 @@ const CATEGORY_SAMPLES = {
       ],
     },
     {
-      label: "Chấn động não thể thao — mẫu 2",
+      label: "Competitive Sports Concussion — Sample 2",
       evidenceUrls: [
         "https://archive.cdc.gov/www_cdc_gov/media/pressrel/r030702a.htm",
       ],
@@ -159,7 +159,7 @@ const CATEGORY_SAMPLES = {
 
   "Rental Car Damage": [
     {
-      label: "Hư hại xe thuê — mẫu 1",
+      label: "Rental Vehicle Collision Damage — Sample 1",
       evidenceUrls: [
         "https://search.ftc.gov/news-events/news/press-releases/1996/12/collision-damage-waiver-insurance-may-benefit-consumers",
       ],
@@ -169,7 +169,7 @@ const CATEGORY_SAMPLES = {
       ],
     },
     {
-      label: "Tranh chấp phí Loss Damage Waiver — mẫu 2",
+      label: "Collision Damage Waiver Dispute — Sample 2",
       evidenceUrls: [
         "https://www.ftc.gov/news-events/news/press-releases/1996/03/budget-rent-car",
       ],
@@ -179,7 +179,7 @@ const CATEGORY_SAMPLES = {
       ],
     },
     {
-      label: "Hư hại xe thuê — mẫu 3",
+      label: "Rental Vehicle Body Repair Claim — Sample 3",
       evidenceUrls: [
         "https://www.123carrental.com/en/us-car-rental-rights",
       ],
@@ -192,7 +192,7 @@ const CATEGORY_SAMPLES = {
 
   "Event Cancellation": [
     {
-      label: "Sự kiện bị huỷ — mẫu 1",
+      label: "Official Concert Cancellation Notice — Sample 1",
       evidenceUrls: [
         "https://www.federalregister.gov/documents/2025/01/10/2024-30293/trade-regulation-rule-on-unfair-or-deceptive-fees",
       ],
@@ -202,7 +202,7 @@ const CATEGORY_SAMPLES = {
       ],
     },
     {
-      label: "Vé sự kiện không được hoàn tiền đúng hạn — mẫu 2",
+      label: "Event Refund Non-Fulfillment — Sample 2",
       evidenceUrls: [
         "https://www.britannica.com/money/junk-fees-rule",
       ],
@@ -212,7 +212,7 @@ const CATEGORY_SAMPLES = {
       ],
     },
     {
-      label: "Tranh chấp phí vé sự kiện — mẫu 3",
+      label: "Event Ticket Fee Dispute — Sample 3",
       evidenceUrls: [
         "https://consumer.ftc.gov/consumer-alerts/2026/04/did-you-buy-tickets-stubhub-between-may-12-14-last-year",
       ],

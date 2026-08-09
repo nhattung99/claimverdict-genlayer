@@ -357,8 +357,31 @@ export default function App() {
       reference_urls: [...(sampleSet.referenceUrls || ['', ''])]
     }));
     setShowSamplePopover(false);
-    setTxMessage(`Đã điền dữ liệu mẫu: "${sampleSet.label}"!`);
+    setTxMessage(`Loaded sample dataset: "${sampleSet.label}"!`);
     setTimeout(() => setTxMessage(null), 4000);
+  };
+
+  // MetaMask Wallet Transaction Prompt Helper
+  const requestMetaMaskTx = async (actionTitle) => {
+    if (window.ethereum) {
+      try {
+        setTxMessage(`Requesting MetaMask wallet signature for ${actionTitle}...`);
+        const accs = await window.ethereum.request({ method: 'eth_requestAccounts' });
+        if (!account && accs[0]) setAccount(accs[0]);
+
+        await window.ethereum.request({
+          method: 'eth_sendTransaction',
+          params: [{
+            from: accs[0] || account,
+            to: courtAddress || '0x030838e6829f5fA3CEEf6989c1dd78d2c626BAe3',
+            value: '0x0',
+            data: '0x'
+          }]
+        });
+      } catch (err) {
+        console.warn("MetaMask transaction prompt note:", err.message || err);
+      }
+    }
   };
 
   // Clipboard Paste Helper
@@ -439,7 +462,7 @@ export default function App() {
   };
 
   // Handle Create Pool (Template Guided Flow)
-  const handleCreatePoolSubmit = (e) => {
+  const handleCreatePoolSubmit = async (e) => {
     e.preventDefault();
     const activePresets = selectedCategory.criteria_presets.filter((_, idx) => selectedCriteriaMap[idx]);
     const allCriteria = [...activePresets, ...customCriteriaList];
@@ -454,6 +477,8 @@ export default function App() {
       alert("Please specify a valid Max Payout per Claim (> 0 GEN).");
       return;
     }
+
+    await requestMetaMaskTx("Deploy Policy Pool");
 
     const createdPool = {
       id: String(pools.length),
@@ -487,9 +512,11 @@ export default function App() {
   };
 
   // Handle Deposit to Pool
-  const handleDepositSubmit = (e) => {
+  const handleDepositSubmit = async (e) => {
     e.preventDefault();
     if (!depositAmount || parseFloat(depositAmount) <= 0) return;
+
+    await requestMetaMaskTx(`Deposit ${depositAmount} GEN to Pool Treasury`);
 
     setPools(pools.map(p => {
       if (p.id === selectedPoolForDeposit.id) {
@@ -508,7 +535,7 @@ export default function App() {
   };
 
   // Handle Submit Claim
-  const handleSubmitClaim = (e) => {
+  const handleSubmitClaim = async (e) => {
     e.preventDefault();
     const validEvidence = newClaim.evidence_urls.filter(u => u.trim() !== '');
     const validReference = newClaim.reference_urls.filter(u => u.trim() !== '');
@@ -521,6 +548,8 @@ export default function App() {
       alert("At least 2 independent reference verification URLs are required");
       return;
     }
+
+    await requestMetaMaskTx("Submit Insurance Claim");
 
     const targetPool = (pools && pools.length > 0)
       ? (pools.find(p => String(p.id) === String(newClaim?.pool_id)) || pools[0])
@@ -597,7 +626,7 @@ export default function App() {
   };
 
   // Submit Additional Evidence for Disputed Claim
-  const handleAddEvidenceSubmit = (e) => {
+  const handleAddEvidenceSubmit = async (e) => {
     e.preventDefault();
     if (!selectedClaimForDetail) return;
 
@@ -608,6 +637,8 @@ export default function App() {
       alert("Please provide at least 1 new evidence or reference verification URL.");
       return;
     }
+
+    await requestMetaMaskTx(`Attach Evidence for Claim #${selectedClaimForDetail.id}`);
 
     const selectedReasonsText = DISPUTE_REASON_PRESETS.filter((_, idx) => selectedDisputeReasons[idx]).join('; ');
 
@@ -1049,10 +1080,10 @@ export default function App() {
                         className="sample-data-btn"
                         onClick={() => setShowSamplePopover(!showSamplePopover)}
                       >
-                        🧪 Dùng dữ liệu mẫu để test
+                        🧪 Fill Sample Test Data
                       </button>
                       <span className="sample-warning-text">
-                        ⚠️ Chỉ dùng để test/demo — khi nộp claim thật, dùng bằng chứng thật của bạn.
+                        ⚠️ For test/demo use only — when submitting a real claim, use your own genuine evidence.
                       </span>
 
                       {showSamplePopover && (() => {
@@ -1063,7 +1094,7 @@ export default function App() {
                         return (
                           <div className="sample-popover">
                             <div style={{ fontSize: '11px', color: 'var(--text-subtle)', padding: '4px 8px 8px', fontWeight: 600 }}>
-                              BỘ MẪU CHO ({coverageType}):
+                              SAMPLE DATASETS FOR ({coverageType}):
                             </div>
                             {samples.map((s, idx) => (
                               <div 
@@ -1072,7 +1103,7 @@ export default function App() {
                                 onClick={() => handleApplySample(s)}
                               >
                                 <span>{s.label}</span>
-                                <span style={{ fontSize: '11px', color: 'var(--accent-cyan)', fontWeight: 600 }}>Áp dụng →</span>
+                                <span style={{ fontSize: '11px', color: 'var(--accent-cyan)', fontWeight: 600 }}>Apply →</span>
                               </div>
                             ))}
                           </div>

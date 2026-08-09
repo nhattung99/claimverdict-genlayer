@@ -61,10 +61,10 @@ export class ErrorBoundary extends React.Component {
             </div>
 
             <h2 style={{ fontSize: '20px', fontWeight: 700, marginBottom: '8px', color: '#f8fafc' }}>
-              An Error Occurred / Đã có lỗi xảy ra khi tải form
+              An Unexpected Error Occurred
             </h2>
             <p style={{ fontSize: '14px', color: '#94a3b8', marginBottom: '24px', lineHeight: 1.5 }}>
-              The application encountered an unexpected error. / Đã xảy ra lỗi không mong muốn. Trình ứng dụng đã khoanh vùng lỗi để tránh sập toàn trang.
+              The application encountered an unexpected error during component rendering. The error has been safely caught by the ErrorBoundary to prevent full app crashes.
             </p>
 
             {this.state.error && (
@@ -107,7 +107,7 @@ export class ErrorBoundary extends React.Component {
                 cursor: 'pointer'
               }}
             >
-              <RefreshCw size={16} /> Reload Application / Thử lại
+              <RefreshCw size={16} /> Reload Application
             </button>
           </div>
         </div>
