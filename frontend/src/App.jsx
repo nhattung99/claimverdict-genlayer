@@ -18,7 +18,8 @@ import {
   Sparkles,
   Info,
   ChevronRight,
-  Send
+  Send,
+  Clipboard
 } from 'lucide-react';
 import { getGenlayerClient } from './genlayerClient';
 
@@ -932,14 +933,19 @@ export default function App() {
 
               {/* Incident Scenario Radio Options */}
               {(() => {
-                const targetPool = pools.find(p => p.id === newClaim.pool_id) || pools[0];
-                const scenarios = PRESET_INCIDENT_SCENARIOS[targetPool.coverage_type] || [
+                const targetPool = (pools && pools.length > 0)
+                  ? (pools.find(p => p.id === newClaim.pool_id) || pools[0])
+                  : { id: '0', coverage_type: 'Flight Cancellation & Delay', max_payout_per_claim: '1000', pool_balance: '15000' };
+                const coverageType = targetPool?.coverage_type || 'Flight Cancellation & Delay';
+                const scenarios = PRESET_INCIDENT_SCENARIOS[coverageType] || [
                   "Official incident claim matching policy criteria"
                 ];
-                const hints = POOL_URL_HINTS[targetPool.coverage_type] || {
+                const hints = POOL_URL_HINTS[coverageType] || {
                   evidence: "Official invoice, loss photo, carrier receipt link",
                   reference: "Public status verification page, official bulletin link"
                 };
+                const evidenceUrls = newClaim?.evidence_urls || [''];
+                const referenceUrls = newClaim?.reference_urls || ['', ''];
 
                 return (
                   <>
@@ -1018,7 +1024,7 @@ export default function App() {
                     {/* Evidence URLs with Clipboard Paste Button & Contextual Hint */}
                     <div className="form-group">
                       <label className="form-label">Claimant Evidence URLs (Min 1 Required) *</label>
-                      {newClaim.evidence_urls.map((url, idx) => (
+                      {evidenceUrls.map((url, idx) => (
                         <div key={idx} className="url-input-wrapper">
                           <input 
                             type="url"
@@ -1053,7 +1059,7 @@ export default function App() {
                     {/* Reference Verification URLs with Clipboard Paste Button & Contextual Hint */}
                     <div className="form-group">
                       <label className="form-label">Independent Reference Verification URLs (Min 2 Required) *</label>
-                      {newClaim.reference_urls.map((url, idx) => (
+                      {referenceUrls.map((url, idx) => (
                         <div key={idx} className="url-input-wrapper">
                           <input 
                             type="url"
