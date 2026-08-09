@@ -91,6 +91,114 @@ const INITIAL_DEMO_CLAIMS = [
   }
 ];
 
+const PRESET_CATEGORIES = [
+  {
+    id: 'flight',
+    icon: '✈️',
+    name: 'Flight Cancellation & Delay',
+    coverage_type: 'Flight Cancellation & Delay',
+    default_max_payout: '1000',
+    default_initial_deposit: '15000',
+    max_payout_presets: ['500', '1000', '2000'],
+    deposit_presets: ['5000', '15000', '30000'],
+    criteria_presets: [
+      "Official flight status confirmed CANCELLED or delayed > 4 hours by airline",
+      "No alternative flight provided within 6 hours of original departure schedule",
+      "Claim filed with valid e-ticket receipt and booking reference code"
+    ]
+  },
+  {
+    id: 'sports',
+    icon: '🏃',
+    name: 'Amateur Sports Injury',
+    coverage_type: 'Amateur Sports Injury Reimbursement',
+    default_max_payout: '2500',
+    default_initial_deposit: '30000',
+    max_payout_presets: ['1000', '2500', '5000'],
+    deposit_presets: ['10000', '30000', '50000'],
+    criteria_presets: [
+      "Incident occurred during registered amateur sporting competition or event",
+      "Hospital or urgent care medical evaluation record submitted",
+      "Itemized medical treatment receipt from licensed healthcare clinic"
+    ]
+  },
+  {
+    id: 'trip',
+    icon: '🧳',
+    name: 'Trip Cancellation',
+    coverage_type: 'Travel & Trip Cancellation',
+    default_max_payout: '1500',
+    default_initial_deposit: '20000',
+    max_payout_presets: ['500', '1500', '3000'],
+    deposit_presets: ['5000', '20000', '40000'],
+    criteria_presets: [
+      "Trip cancelled due to documented personal emergency, illness, or severe weather",
+      "Non-refundable travel booking receipts provided",
+      "Cancellation request submitted at least 24 hours before scheduled departure"
+    ]
+  },
+  {
+    id: 'medical',
+    icon: '🏥',
+    name: 'Emergency Travel Medical',
+    coverage_type: 'Emergency Travel Medical Insurance',
+    default_max_payout: '5000',
+    default_initial_deposit: '50000',
+    max_payout_presets: ['2000', '5000', '10000'],
+    deposit_presets: ['15000', '50000', '100000'],
+    criteria_presets: [
+      "Emergency hospitalization required while traveling outside primary country of residence",
+      "Official hospital admission and discharge summary attached",
+      "Verified medical expense invoices from accredited international medical facility"
+    ]
+  },
+  {
+    id: 'baggage',
+    icon: '🎒',
+    name: 'Lost / Damaged Baggage',
+    coverage_type: 'Lost & Damaged Luggage Protection',
+    default_max_payout: '800',
+    default_initial_deposit: '10000',
+    max_payout_presets: ['300', '800', '1500'],
+    deposit_presets: ['3000', '10000', '25000'],
+    criteria_presets: [
+      "Baggage officially reported lost or damaged by carrier with Property Irregularity Report (PIR)",
+      "Carrier failure to locate luggage within 24 hours of arrival",
+      "Itemized list of lost personal items with purchase receipts"
+    ]
+  },
+  {
+    id: 'car',
+    icon: '🚗',
+    name: 'Rental Car Damage',
+    coverage_type: 'Rental Vehicle Collision & Damage',
+    default_max_payout: '2000',
+    default_initial_deposit: '25000',
+    max_payout_presets: ['1000', '2000', '4000'],
+    deposit_presets: ['10000', '25000', '50000'],
+    criteria_presets: [
+      "Accidental damage occurred during active rental contract period",
+      "Official police accident report or rental agency damage incident log submitted",
+      "Itemized repair cost invoice from authorized vehicle repair shop"
+    ]
+  },
+  {
+    id: 'event',
+    icon: '🎫',
+    name: 'Event Ticket Cancellation',
+    coverage_type: 'Concert & Event Ticket Protection',
+    default_max_payout: '300',
+    default_initial_deposit: '5000',
+    max_payout_presets: ['150', '300', '600'],
+    deposit_presets: ['2000', '5000', '15000'],
+    criteria_presets: [
+      "Official event cancellation notice issued by organizer or ticketing vendor",
+      "No secondary rescheduled event date or venue alternative provided",
+      "Original ticket purchase confirmation and receipt attached"
+    ]
+  }
+];
+
 export default function App() {
   // Config & State
   const [account, setAccount] = useState(null);
@@ -113,11 +221,20 @@ export default function App() {
   const [isResolving, setIsResolving] = useState(false);
   const [txMessage, setTxMessage] = useState(null);
 
+  // Guided Pool Creation State (Template Driven)
+  const [createStep, setCreateStep] = useState(1);
+  const [selectedCategory, setSelectedCategory] = useState(PRESET_CATEGORIES[0]);
+  const [selectedCriteriaMap, setSelectedCriteriaMap] = useState({ 0: true, 1: true, 2: true });
+  const [initialDepositAmount, setInitialDepositAmount] = useState(PRESET_CATEGORIES[0].default_initial_deposit);
+  const [customCriterionInput, setCustomCriterionInput] = useState('');
+  const [showCustomInput, setShowCustomInput] = useState(false);
+  const [customCriteriaList, setCustomCriteriaList] = useState([]);
+
   // Form Inputs
   const [newPool, setNewPool] = useState({
-    coverage_type: '',
-    criteria: ['', ''],
-    max_payout: ''
+    coverage_type: PRESET_CATEGORIES[0].coverage_type,
+    criteria: PRESET_CATEGORIES[0].criteria_presets,
+    max_payout: PRESET_CATEGORIES[0].default_max_payout
   });
 
   const [depositAmount, setDepositAmount] = useState('');
@@ -147,13 +264,37 @@ export default function App() {
     }
   };
 
-  // Helper for adding/removing criteria inputs
-  const handleCriterionChange = (index, value) => {
-    const updated = [...newPool.criteria];
-    updated[index] = value;
-    setNewPool({ ...newPool, criteria: updated });
+  // Category Chip Selection
+  const handleSelectCategory = (cat) => {
+    setSelectedCategory(cat);
+    const initialMap = {};
+    cat.criteria_presets.forEach((_, idx) => { initialMap[idx] = true; });
+    setSelectedCriteriaMap(initialMap);
+    setNewPool({
+      coverage_type: cat.coverage_type,
+      criteria: cat.criteria_presets,
+      max_payout: cat.default_max_payout
+    });
+    setInitialDepositAmount(cat.default_initial_deposit);
   };
-  const addCriterionField = () => setNewPool({ ...newPool, criteria: [...newPool.criteria, ''] });
+
+  // Toggle Criterion Checkbox
+  const handleToggleCriterion = (idx) => {
+    setSelectedCriteriaMap(prev => ({ ...prev, [idx]: !prev[idx] }));
+  };
+
+  // Add Custom Criterion
+  const handleAddCustomCriterion = () => {
+    if (!customCriterionInput.trim()) return;
+    setCustomCriteriaList(prev => [...prev, customCriterionInput.trim()]);
+    setCustomCriterionInput('');
+    setShowCustomInput(false);
+  };
+
+  // Remove Custom Criterion
+  const handleRemoveCustomCriterion = (idx) => {
+    setCustomCriteriaList(prev => prev.filter((_, i) => i !== idx));
+  };
 
   // Helper for URL arrays
   const handleUrlChange = (form, setForm, key, index, value) => {
@@ -163,30 +304,52 @@ export default function App() {
   };
   const addUrlField = (form, setForm, key) => setForm({ ...setForm, [key]: [...form[key], ''] });
 
-  // Handle Create Pool
+  // Handle Create Pool (Template Guided Flow)
   const handleCreatePoolSubmit = (e) => {
     e.preventDefault();
-    const validCriteria = newPool.criteria.filter(c => c.trim() !== '');
-    if (!newPool.coverage_type || validCriteria.length === 0 || !newPool.max_payout) {
-      alert("Please fill all required pool fields");
+    const activePresets = selectedCategory.criteria_presets.filter((_, idx) => selectedCriteriaMap[idx]);
+    const allCriteria = [...activePresets, ...customCriteriaList];
+
+    if (allCriteria.length === 0) {
+      alert("Please select or add at least 1 eligibility criterion for the policy pool.");
+      return;
+    }
+
+    const maxPayoutVal = newPool.max_payout || selectedCategory.default_max_payout;
+    if (!maxPayoutVal || parseFloat(maxPayoutVal) <= 0) {
+      alert("Please specify a valid Max Payout per Claim (> 0 GEN).");
       return;
     }
 
     const createdPool = {
       id: String(pools.length),
-      coverage_type: newPool.coverage_type,
+      coverage_type: selectedCategory.coverage_type,
       operator: account || "0xYourWallet",
-      max_payout_per_claim: newPool.max_payout,
+      max_payout_per_claim: maxPayoutVal,
       pool_balance: "0",
       active: true,
-      criteria: validCriteria
+      criteria: allCriteria
     };
 
     setPools([createdPool, ...pools]);
     setShowCreatePoolModal(false);
-    setNewPool({ coverage_type: '', criteria: ['', ''], max_payout: '' });
-    setTxMessage("Policy Pool created successfully!");
-    setTimeout(() => setTxMessage(null), 4000);
+
+    // Automatic Flow Transition: Prompt initial deposit modal immediately after pool creation
+    if (initialDepositAmount && parseFloat(initialDepositAmount) > 0) {
+      setSelectedPoolForDeposit(createdPool);
+      setDepositAmount(initialDepositAmount);
+      setShowDepositModal(true);
+      setTxMessage(`Policy Pool #${createdPool.id} created! Opening deposit authorization for ${initialDepositAmount} GEN initial pool funding...`);
+    } else {
+      setTxMessage(`Policy Pool #${createdPool.id} created successfully!`);
+    }
+
+    // Reset creation form state
+    setCreateStep(1);
+    setCustomCriteriaList([]);
+    setCustomCriterionInput('');
+    setShowCustomInput(false);
+    setTimeout(() => setTxMessage(null), 5000);
   };
 
   // Handle Deposit to Pool
@@ -748,62 +911,244 @@ export default function App() {
         </div>
       )}
 
-      {/* MODAL: CREATE POLICY POOL */}
+      {/* MODAL: CREATE POLICY POOL (TEMPLATE DRIVEN & GUIDED FLOW) */}
       {showCreatePoolModal && (
         <div className="modal-overlay">
-          <div className="modal-content">
+          <div className="modal-content" style={{ maxWidth: '640px' }}>
             <div className="modal-header">
-              <h3>Create Policy Pool</h3>
+              <div>
+                <h3 style={{ fontSize: '20px' }}>Create Policy Pool</h3>
+                <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                  Guided template setup — zero platform fees, sign only network gas.
+                </p>
+              </div>
               <button className="btn btn-secondary" onClick={() => setShowCreatePoolModal(false)}>✕</button>
             </div>
-            <form onSubmit={handleCreatePoolSubmit}>
-              <div className="form-group">
-                <label className="form-label">Coverage Risk Type *</label>
-                <input 
-                  type="text" 
-                  placeholder="e.g. Travel Delay, Amateur Injury" 
-                  className="form-input"
-                  value={newPool.coverage_type}
-                  onChange={e => setNewPool({ ...newPool, coverage_type: e.target.value })}
-                  required
-                />
-              </div>
 
-              <div className="form-group">
-                <label className="form-label">Max Payout Per Claim (GEN) *</label>
-                <input 
-                  type="number" 
-                  placeholder="1000" 
-                  className="form-input"
-                  value={newPool.max_payout}
-                  onChange={e => setNewPool({ ...newPool, max_payout: e.target.value })}
-                  required
-                />
+            {/* Step Progress Indicator */}
+            <div className="step-indicator">
+              <div className={`step-item ${createStep === 1 ? 'active' : createStep > 1 ? 'completed' : ''}`}>
+                <span className="step-number">1</span>
+                <span>Category & Criteria</span>
               </div>
+              <div className="step-divider" />
+              <div className={`step-item ${createStep === 2 ? 'active' : createStep > 2 ? 'completed' : ''}`}>
+                <span className="step-number">2</span>
+                <span>Financial Terms</span>
+              </div>
+              <div className="step-divider" />
+              <div className={`step-item ${createStep === 3 ? 'active' : ''}`}>
+                <span className="step-number">3</span>
+                <span>Review & Deploy</span>
+              </div>
+            </div>
 
-              <div className="form-group">
-                <label className="form-label">Eligibility Criteria List *</label>
-                {newPool.criteria.map((c, i) => (
-                  <input 
-                    key={i}
-                    type="text"
-                    placeholder={`Criterion #${i + 1}`}
-                    className="form-input"
-                    style={{ marginBottom: '8px' }}
-                    value={c}
-                    onChange={e => handleCriterionChange(i, e.target.value)}
-                    required={i === 0}
-                  />
-                ))}
-                <button type="button" className="btn btn-secondary" style={{ fontSize: '12px' }} onClick={addCriterionField}>
-                  + Add Criterion
+            {/* STEP 1: CATEGORY CHIPS & PRESET CRITERIA CHECKBOXES */}
+            {createStep === 1 && (
+              <div>
+                <div className="form-group">
+                  <label className="form-label" style={{ marginBottom: '10px' }}>Select Policy Category Preset *</label>
+                  <div className="category-grid">
+                    {PRESET_CATEGORIES.map(cat => (
+                      <div 
+                        key={cat.id} 
+                        className={`category-chip ${selectedCategory.id === cat.id ? 'selected' : ''}`}
+                        onClick={() => handleSelectCategory(cat)}
+                      >
+                        <span className="category-chip-icon">{cat.icon}</span>
+                        <span className="category-chip-label">{cat.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label" style={{ marginBottom: '10px' }}>
+                    Eligibility Criteria (Tick to Apply) *
+                  </label>
+                  <div className="criteria-checkbox-list">
+                    {selectedCategory.criteria_presets.map((criterion, idx) => (
+                      <div 
+                        key={idx} 
+                        className={`criteria-checkbox-item ${selectedCriteriaMap[idx] ? 'checked' : ''}`}
+                        onClick={() => handleToggleCriterion(idx)}
+                      >
+                        <input 
+                          type="checkbox" 
+                          className="criteria-checkbox-input"
+                          checked={!!selectedCriteriaMap[idx]}
+                          onChange={() => {}}
+                        />
+                        <span className="criteria-checkbox-text">{criterion}</span>
+                      </div>
+                    ))}
+
+                    {customCriteriaList.map((cust, idx) => (
+                      <div key={idx} className="criteria-checkbox-item checked" style={{ justifyContent: 'space-between' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <span className="badge badge-resolved" style={{ fontSize: '10px' }}>CUSTOM</span>
+                          <span className="criteria-checkbox-text">{cust}</span>
+                        </div>
+                        <button 
+                          type="button" 
+                          style={{ background: 'none', border: 'none', color: 'var(--accent-rose)', cursor: 'pointer', fontSize: '14px' }}
+                          onClick={() => handleRemoveCustomCriterion(idx)}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+
+                  {!showCustomInput ? (
+                    <button 
+                      type="button" 
+                      className="btn btn-secondary" 
+                      style={{ fontSize: '12px', padding: '6px 14px' }}
+                      onClick={() => setShowCustomInput(true)}
+                    >
+                      ➕ Add Custom Criterion
+                    </button>
+                  ) : (
+                    <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+                      <input 
+                        type="text" 
+                        placeholder="Enter optional custom criterion..." 
+                        className="form-input"
+                        value={customCriterionInput}
+                        onChange={e => setCustomCriterionInput(e.target.value)}
+                      />
+                      <button type="button" className="btn btn-primary" onClick={handleAddCustomCriterion}>Add</button>
+                      <button type="button" className="btn btn-secondary" onClick={() => setShowCustomInput(false)}>Cancel</button>
+                    </div>
+                  )}
+                </div>
+
+                <button 
+                  type="button" 
+                  className="btn btn-primary" 
+                  style={{ width: '100%', marginTop: '16px' }}
+                  onClick={() => setCreateStep(2)}
+                >
+                  Next: Financial Terms →
                 </button>
               </div>
+            )}
 
-              <button type="submit" className="btn btn-primary" style={{ width: '100%', marginTop: '16px' }}>
-                Deploy Policy Pool
-              </button>
-            </form>
+            {/* STEP 2: FINANCIAL AMOUNTS & PRESET CHIPS */}
+            {createStep === 2 && (
+              <div>
+                <div className="form-group">
+                  <label className="form-label">Max Payout Per Claim (GEN) *</label>
+                  <div className="preset-chips-row">
+                    {selectedCategory.max_payout_presets.map(val => (
+                      <button 
+                        key={val}
+                        type="button"
+                        className={`preset-chip ${newPool.max_payout === val ? 'active' : ''}`}
+                        onClick={() => setNewPool({ ...newPool, max_payout: val })}
+                      >
+                        {val} GEN
+                      </button>
+                    ))}
+                  </div>
+                  <input 
+                    type="number" 
+                    placeholder="Enter custom max payout per claim" 
+                    className="form-input"
+                    value={newPool.max_payout}
+                    onChange={e => setNewPool({ ...newPool, max_payout: e.target.value })}
+                    required
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Initial Pool Deposit (GEN) *</label>
+                  <div className="preset-chips-row">
+                    {selectedCategory.deposit_presets.map(val => (
+                      <button 
+                        key={val}
+                        type="button"
+                        className={`preset-chip ${initialDepositAmount === val ? 'active' : ''}`}
+                        onClick={() => setInitialDepositAmount(val)}
+                      >
+                        {val} GEN
+                      </button>
+                    ))}
+                  </div>
+                  <input 
+                    type="number" 
+                    placeholder="Enter initial pool deposit amount" 
+                    className="form-input"
+                    value={initialDepositAmount}
+                    onChange={e => setInitialDepositAmount(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
+                  <button type="button" className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setCreateStep(1)}>
+                    ← Back
+                  </button>
+                  <button type="button" className="btn btn-primary" style={{ flex: 2 }} onClick={() => setCreateStep(3)}>
+                    Review & Deploy →
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* STEP 3: SUMMARY & SINGLE-CLICK DEPLOY */}
+            {createStep === 3 && (
+              <form onSubmit={handleCreatePoolSubmit}>
+                <div className="summary-card">
+                  <h4 style={{ fontSize: '15px', color: 'var(--accent-cyan)', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span>{selectedCategory.icon}</span> {selectedCategory.coverage_type}
+                  </h4>
+
+                  <div className="summary-row">
+                    <span style={{ color: 'var(--text-muted)' }}>Max Payout / Claim:</span>
+                    <strong style={{ color: 'var(--accent-emerald)' }}>{newPool.max_payout || selectedCategory.default_max_payout} GEN</strong>
+                  </div>
+
+                  <div className="summary-row">
+                    <span style={{ color: 'var(--text-muted)' }}>Initial Pool Funding:</span>
+                    <strong style={{ color: 'var(--accent-cyan)' }}>{initialDepositAmount} GEN</strong>
+                  </div>
+
+                  <div style={{ marginTop: '14px', paddingTop: '12px', borderTop: '1px dashed rgba(255, 255, 255, 0.08)' }}>
+                    <span style={{ fontSize: '12px', color: 'var(--text-subtle)', fontWeight: 600 }}>APPLIED ELIGIBILITY CRITERIA:</span>
+                    <ul style={{ paddingLeft: '18px', marginTop: '6px', fontSize: '13px', color: 'var(--text-main)' }}>
+                      {selectedCategory.criteria_presets.filter((_, idx) => selectedCriteriaMap[idx]).map((c, i) => (
+                        <li key={i} style={{ marginBottom: '4px' }}>{c}</li>
+                      ))}
+                      {customCriteriaList.map((c, i) => (
+                        <li key={`c-${i}`} style={{ marginBottom: '4px', color: 'var(--accent-cyan)' }}>{c} (Custom)</li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+
+                {/* Free Notice Banner */}
+                <div className="notice-banner-free">
+                  <span style={{ fontSize: '20px' }}>💰</span>
+                  <div>
+                    <strong>Free Policy Pool Creation</strong>
+                    <div style={{ fontSize: '12px', opacity: 0.9, marginTop: '2px' }}>
+                      You only pay standard GenLayer network gas fees when signing the transaction. No platform fees or hidden cuts.
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
+                  <button type="button" className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setCreateStep(2)}>
+                    ← Back
+                  </button>
+                  <button type="submit" className="btn btn-cyan" style={{ flex: 2 }}>
+                    Deploy & Fund Policy Pool
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}
