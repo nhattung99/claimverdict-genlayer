@@ -1,12 +1,25 @@
 # ClaimVerdict — Autonomous Insurance Claim Adjudication Protocol (GenLayer Studionet)
 
-ClaimVerdict is an Intelligent Contract protocol on **GenLayer Studionet** that automates insurance claim processing using non-deterministic AI consensus (`gl.vm.run_nondet`). It validates claimant evidence against real-time independent web verification sources, calculates criteria compliance percentage, and executes native GEN escrow payouts automatically.
+ClaimVerdict is an autonomous insurance claim adjudication dApp built on **GenLayer Studionet**. It uses GenLayer's non-deterministic AI consensus (`gl.vm.run_nondet`) to validate insurance claims against real-time web verification sources, evaluate criteria compliance, and automatically execute native token escrow payouts.
+
+---
+
+## 🌐 Live App
+
+**URL:** [https://claimverdict-genlayer.vercel.app](https://claimverdict-genlayer.vercel.app)
+
+---
+
+## 📜 Deployed Contract (Studionet)
+
+- **Address:** `0x030838e6829f5fA3CEEf6989c1dd78d2c626BAe3`
+- **GenLayer Explorer:** [https://genlayer-explorer.vercel.app/address/0x030838e6829f5fA3CEEf6989c1dd78d2c626BAe3](https://genlayer-explorer.vercel.app/address/0x030838e6829f5fA3CEEf6989c1dd78d2c626BAe3)
 
 ---
 
 ## 🏗️ Architecture: Consolidated Single Contract
 
-The entire protocol has been consolidated into **1 single Intelligent Contract**:
+The entire protocol is consolidated into 1 single Intelligent Contract:
 
 - **[`contracts/claim_verdict.py`](file:///c:/DEV%20Panda/ClaimVerdict/contracts/claim_verdict.py)** (`ClaimVerdict`):
   - **Policy Pool Escrow**: Manages policy pool creation and native GEN deposits (`gl.message.value`).
@@ -63,9 +76,9 @@ tests\test_claim_court.py ....                                          [100%]
 2. Open [`contracts/claim_verdict.py`](file:///c:/DEV%20Panda/ClaimVerdict/contracts/claim_verdict.py).
 3. Click **Deploy**.
 4. Confirm `Result: SUCCESS` and copy the deployed contract address.
-5. Paste the address into `frontend/.env.local`:
+5. Paste the address into `frontend/.env`:
    ```env
-   VITE_CLAIM_COURT_ADDRESS=0x...
+   VITE_CONTRACT_ADDRESS=0x030838e6829f5fA3CEEf6989c1dd78d2c626BAe3
    ```
 6. Run local app:
    ```bash
