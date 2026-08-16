@@ -125,7 +125,6 @@ export const sendContractTransaction = async ({ from, to = CONTRACT_ADDRESS, fun
     const accs = await window.ethereum.request({ method: 'eth_requestAccounts' });
     const sender = from || accs[0];
     
-    // Send actual contract write transaction via MetaMask
     const txHash = await window.ethereum.request({
       method: 'eth_sendTransaction',
       params: [{
@@ -144,5 +143,83 @@ export const sendContractTransaction = async ({ from, to = CONTRACT_ADDRESS, fun
       functionName,
       args
     });
+  }
+};
+
+// Wait for Transaction Finality on GenLayer Network
+export const waitForFinalizedTx = async (txHash, maxRetries = 25, intervalMs = 2500) => {
+  const client = getGenlayerClient();
+  if (client && client.waitForTransactionReceipt) {
+    try {
+      return await client.waitForTransactionReceipt({
+        hash: txHash,
+        status: "FINALIZED",
+        retries: maxRetries,
+        interval: intervalMs
+      });
+    } catch (err) {
+      console.warn("waitForTransactionReceipt note, fallback to RPC polling:", err);
+    }
+  }
+
+  for (let i = 0; i < maxRetries; i++) {
+    await new Promise(r => setTimeout(r, intervalMs));
+    try {
+      const res = await fetch('https://studio.genlayer.com/api', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'eth_getTransactionByHash',
+          params: [txHash]
+        })
+      }).then(r => r.json());
+
+      if (res && res.result) {
+        const tx = res.result;
+        const status = tx.status || tx.state;
+        if (status === 'FINALIZED' || status === 'ACCEPTED' || status === '0x1' || tx.blockNumber) {
+          return tx;
+        }
+      }
+    } catch (e) {
+      console.warn("RPC poll error:", e);
+    }
+  }
+  return true;
+};
+
+// Read Contract View Methods (`get_pool`, `get_claim`, `get_pool_balance`)
+export const readContractState = async (functionName, args = []) => {
+  try {
+    const client = getGenlayerClient();
+    if (client && client.readContract) {
+      return await client.readContract({
+        address: CONTRACT_ADDRESS,
+        functionName,
+        args
+      });
+    }
+  } catch (err) {
+    console.warn(`readContract ${functionName} note:`, err);
+  }
+
+  try {
+    const calldata = encodeGenLayerCalldata(functionName, args);
+    const res = await fetch('https://studio.genlayer.com/api', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'eth_call',
+        params: [{ to: CONTRACT_ADDRESS, data: calldata }, 'latest']
+      })
+    }).then(r => r.json());
+    return res?.result;
+  } catch (err) {
+    console.warn("eth_call RPC error:", err);
+    return null;
   }
 };

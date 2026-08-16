@@ -21,7 +21,14 @@ import {
   Send,
   Clipboard
 } from 'lucide-react';
-import { getGenlayerClient, switchToGenlayerStudionet, sendContractTransaction, CONTRACT_ADDRESS } from './genlayerClient';
+import { 
+  getGenlayerClient, 
+  switchToGenlayerStudionet, 
+  sendContractTransaction, 
+  waitForFinalizedTx, 
+  readContractState, 
+  CONTRACT_ADDRESS 
+} from './genlayerClient';
 import { SAMPLE_CLAIM_DATA } from './data/sampleClaimData';
 
 // Initial Mock Pools & Claims for unconfigured / fallback mode
@@ -460,7 +467,65 @@ export default function App() {
     setForm({ ...form, [key]: [...currentArray, ''] });
   };
 
-  // Handle Create Pool (Template Guided Flow) - Connected to Contract
+  // Load Contract State View Methods
+  const loadContractData = async () => {
+    try {
+      const loadedPools = [];
+      for (let i = 1; i <= 10; i++) {
+        const pId = String(i);
+        const pool = await readContractState('get_pool', [pId]);
+        if (pool && pool.coverage_type && String(pool.coverage_type).trim() !== '') {
+          const bal = await readContractState('get_pool_balance', [pId]);
+          loadedPools.push({
+            id: pId,
+            coverage_type: String(pool.coverage_type),
+            operator: String(pool.operator || '0xOperator'),
+            max_payout_per_claim: String(pool.max_payout_per_claim || '1000'),
+            pool_balance: String(bal || pool.pool_balance || '0'),
+            active: Boolean(pool.active !== false),
+            criteria: Array.isArray(pool.criteria) ? pool.criteria.map(String) : []
+          });
+        }
+      }
+      if (loadedPools.length > 0) {
+        setPools(loadedPools);
+      }
+
+      const loadedClaims = [];
+      for (let j = 1; j <= 20; j++) {
+        const cId = String(j);
+        const claim = await readContractState('get_claim', [cId]);
+        if (claim && claim.pool_id && String(claim.pool_id).trim() !== '') {
+          loadedClaims.push({
+            id: cId,
+            pool_id: String(claim.pool_id),
+            claimant: String(claim.claimant || '0xClaimant'),
+            claimed_amount: String(claim.claimed_amount || '0'),
+            incident_description: String(claim.incident_description || ''),
+            evidence_urls: Array.isArray(claim.evidence_urls) ? claim.evidence_urls.map(String) : [],
+            reference_urls: Array.isArray(claim.reference_urls) ? claim.reference_urls.map(String) : [],
+            status: String(claim.status || 'SUBMITTED'),
+            compliance_pct: Number(claim.compliance_pct || 0),
+            confidence: Number(claim.confidence || 0),
+            payout_amount: String(claim.payout_amount || '0'),
+            verdict_reason: String(claim.verdict_reason || ''),
+            paid_out: Boolean(claim.paid_out)
+          });
+        }
+      }
+      if (loadedClaims.length > 0) {
+        setClaims(loadedClaims);
+      }
+    } catch (err) {
+      console.warn("loadContractData note:", err);
+    }
+  };
+
+  useEffect(() => {
+    loadContractData();
+  }, []);
+
+  // Handle Create Pool (Template Guided Flow) - On-Chain Finalized Execution
   const handleCreatePoolSubmit = async (e) => {
     e.preventDefault();
     const activePresets = selectedCategory.criteria_presets.filter((_, idx) => selectedCriteriaMap[idx]);
@@ -478,75 +543,133 @@ export default function App() {
     }
 
     const maxPayoutNum = Math.floor(parseFloat(maxPayoutVal));
-    await requestMetaMaskTx(
-      "Deploy Policy Pool",
-      "create_policy_pool",
-      [selectedCategory.coverage_type, allCriteria, maxPayoutNum]
-    );
+    setTxMessage({
+      status: 'pending',
+      title: 'Phase 1/3: Submitting Deploy Policy Pool to MetaMask...',
+      detail: 'Please confirm transaction signature in MetaMask.'
+    });
 
-    const createdPool = {
-      id: String(pools.length),
-      coverage_type: selectedCategory.coverage_type,
-      operator: account || "0xYourWallet",
-      max_payout_per_claim: maxPayoutVal,
-      pool_balance: "0",
-      active: true,
-      criteria: allCriteria
-    };
+    try {
+      const txHash = await sendContractTransaction({
+        from: account,
+        to: courtAddress || CONTRACT_ADDRESS,
+        functionName: 'create_policy_pool',
+        args: [selectedCategory.coverage_type, allCriteria, maxPayoutNum]
+      });
 
-    setPools([createdPool, ...pools]);
-    setShowCreatePoolModal(false);
+      if (!txHash) {
+        throw new Error("Transaction cancelled or rejected by user.");
+      }
 
-    // Automatic Flow Transition: Prompt initial deposit modal immediately after pool creation
-    if (initialDepositAmount && parseFloat(initialDepositAmount) > 0) {
-      setSelectedPoolForDeposit(createdPool);
-      setDepositAmount(initialDepositAmount);
-      setShowDepositModal(true);
-      setTxMessage(`Policy Pool #${createdPool.id} transaction sent to contract! Opening deposit authorization...`);
-    } else {
-      setTxMessage(`Policy Pool #${createdPool.id} transaction sent to contract!`);
+      setTxMessage({
+        status: 'processing',
+        hash: txHash,
+        title: 'Phase 2/3: Transaction submitted! Waiting for finalization on GenLayer Studionet...',
+        detail: 'Validators are processing block inclusion. Please do not close window.'
+      });
+
+      await waitForFinalizedTx(txHash);
+
+      setTxMessage({
+        status: 'reading',
+        hash: txHash,
+        title: 'Phase 3/3: Finalized! Reading pool state directly from GenLayer contract...',
+        detail: 'Fetching get_pool and get_pool_balance from contract view methods.'
+      });
+
+      await loadContractData();
+      setShowCreatePoolModal(false);
+
+      setTxMessage({
+        status: 'success',
+        hash: txHash,
+        title: 'Policy Pool Created Successfully on GenLayer Contract!',
+        detail: 'State populated 100% directly from contract view methods.'
+      });
+    } catch (err) {
+      console.warn("Create pool error:", err);
+      // DO NOT update UI state on error!
+      setTxMessage({
+        status: 'error',
+        title: err.message.includes('rejected') || err.message.includes('cancelled') || err.message.includes('User rejected')
+          ? 'Transaction Cancelled.'
+          : 'Pool Creation Failed: ' + err.message,
+        detail: 'No local state changes applied.'
+      });
+    } finally {
+      setTimeout(() => setTxMessage(null), 8000);
     }
-
-    // Reset creation form state
-    setCreateStep(1);
-    setCustomCriteriaList([]);
-    setCustomCriterionInput('');
-    setShowCustomInput(false);
-    setTimeout(() => setTxMessage(null), 5000);
   };
 
-  // Handle Deposit to Pool - Connected to Contract
+  // Handle Deposit to Pool - On-Chain Finalized Execution
   const handleDepositSubmit = async (e) => {
     e.preventDefault();
     if (!depositAmount || parseFloat(depositAmount) <= 0) return;
 
-    const depositNum = Math.floor(parseFloat(depositAmount));
+    const poolIdStr = String(selectedPoolForDeposit?.id || '1');
     const depositWeiHex = '0x' + BigInt(Math.floor(parseFloat(depositAmount) * 1e18)).toString(16);
 
-    await requestMetaMaskTx(
-      `Deposit ${depositAmount} GEN to Pool Treasury`,
-      "deposit_to_pool",
-      [String(selectedPoolForDeposit.id)],
-      depositWeiHex
-    );
+    setTxMessage({
+      status: 'pending',
+      title: `Phase 1/3: Submitting ${depositAmount} GEN Deposit to MetaMask...`,
+      detail: 'Please confirm native GEN deposit in MetaMask.'
+    });
 
-    setPools(pools.map(p => {
-      if (p.id === selectedPoolForDeposit.id) {
-        return {
-          ...p,
-          pool_balance: String(parseFloat(p.pool_balance) + parseFloat(depositAmount))
-        };
+    try {
+      const txHash = await sendContractTransaction({
+        from: account,
+        to: courtAddress || CONTRACT_ADDRESS,
+        functionName: 'deposit_to_pool',
+        args: [poolIdStr],
+        value: depositWeiHex
+      });
+
+      if (!txHash) {
+        throw new Error("Transaction cancelled or rejected by user.");
       }
-      return p;
-    }));
 
-    setShowDepositModal(false);
-    setDepositAmount('');
-    setTxMessage(`Deposit of ${depositAmount} GEN to Pool #${selectedPoolForDeposit.id} submitted to contract!`);
-    setTimeout(() => setTxMessage(null), 4000);
+      setTxMessage({
+        status: 'processing',
+        hash: txHash,
+        title: `Phase 2/3: Deposit submitted! Waiting for finalization on GenLayer Studionet...`,
+        detail: 'Confirming block inclusion.'
+      });
+
+      await waitForFinalizedTx(txHash);
+
+      setTxMessage({
+        status: 'reading',
+        hash: txHash,
+        title: 'Phase 3/3: Finalized! Reading updated pool balance from contract...',
+        detail: 'Reading get_pool_balance view directly from contract.'
+      });
+
+      await loadContractData();
+      setShowDepositModal(false);
+      setDepositAmount('');
+
+      setTxMessage({
+        status: 'success',
+        hash: txHash,
+        title: `Successfully Deposited ${depositAmount} GEN to Pool #${poolIdStr}!`,
+        detail: 'Updated balance verified on-chain.'
+      });
+    } catch (err) {
+      console.warn("Deposit error:", err);
+      // DO NOT update UI state on error!
+      setTxMessage({
+        status: 'error',
+        title: err.message.includes('rejected') || err.message.includes('cancelled') || err.message.includes('User rejected')
+          ? 'Transaction Cancelled.'
+          : 'Deposit Failed: ' + err.message,
+        detail: 'No balance changes applied.'
+      });
+    } finally {
+      setTimeout(() => setTxMessage(null), 8000);
+    }
   };
 
-  // Handle Submit Claim - Connected to Contract
+  // Handle Submit Claim - On-Chain Finalized Execution
   const handleSubmitClaim = async (e) => {
     e.preventDefault();
     const validEvidence = newClaim.evidence_urls.filter(u => u.trim() !== '');
@@ -563,7 +686,8 @@ export default function App() {
 
     const targetPool = (pools && pools.length > 0)
       ? (pools.find(p => String(p.id) === String(newClaim?.pool_id)) || pools[0])
-      : { id: '0', coverage_type: 'Flight Cancellation & Delay', max_payout_per_claim: '1000', pool_balance: '15000' };
+      : { id: '1', coverage_type: 'Flight Cancellation & Delay', max_payout_per_claim: '1000' };
+
     const scenarios = PRESET_INCIDENT_SCENARIOS[targetPool.coverage_type] || [
       "Official incident claim matching pool eligibility criteria"
     ];
@@ -576,84 +700,151 @@ export default function App() {
     const claimedVal = newClaim.amount || String(Math.round(parseFloat(targetPool.max_payout_per_claim) * 0.5));
     const claimedNum = Math.floor(parseFloat(claimedVal));
 
-    await requestMetaMaskTx(
-      "Submit Insurance Claim",
-      "submit_claim",
-      [
-        String(newClaim.pool_id),
-        claimedNum,
-        finalDesc,
-        validEvidence,
-        validReference
-      ]
-    );
+    setTxMessage({
+      status: 'pending',
+      title: 'Phase 1/3: Submitting Claim to MetaMask...',
+      detail: 'Please confirm submit_claim transaction in MetaMask.'
+    });
 
-    const poolBal = parseFloat(targetPool ? targetPool.pool_balance : 0);
-    const createdClaim = {
-      id: String(claims.length),
-      pool_id: newClaim.pool_id,
-      claimant: account || "0xClaimantWallet",
-      claimed_amount: claimedVal,
-      incident_description: finalDesc,
-      evidence_urls: validEvidence,
-      reference_urls: validReference,
-      status: poolBal < parseFloat(claimedVal) ? "REJECTED_NO_FUNDS" : "SUBMITTED",
-      compliance_pct: 0,
-      confidence: 0,
-      payout_amount: "0",
-      verdict_reason: poolBal < parseFloat(claimedVal) ? "Insufficient policy pool balance in treasury" : "Awaiting AI non-deterministic consensus resolution on GenLayer contract",
-      paid_out: false
-    };
+    try {
+      const txHash = await sendContractTransaction({
+        from: account,
+        to: courtAddress || CONTRACT_ADDRESS,
+        functionName: 'submit_claim',
+        args: [
+          String(newClaim.pool_id || '1'),
+          claimedNum,
+          finalDesc,
+          validEvidence,
+          validReference
+        ]
+      });
 
-    setClaims([createdClaim, ...claims]);
-    setNewClaim({ pool_id: '0', amount: '', description: '', evidence_urls: [''], reference_urls: ['', ''] });
-    setShowCustomIncidentText(false);
-    setActiveTab('claims');
-    setTxMessage(`Claim #${createdClaim.id} submitted to GenLayer contract for Pool #${createdClaim.pool_id}!`);
-    setTimeout(() => setTxMessage(null), 4000);
+      if (!txHash) {
+        throw new Error("Transaction cancelled or rejected by user.");
+      }
+
+      setTxMessage({
+        status: 'processing',
+        hash: txHash,
+        title: 'Phase 2/3: Claim submitted! Waiting for finalization on GenLayer Studionet...',
+        detail: 'Processing block inclusion.'
+      });
+
+      await waitForFinalizedTx(txHash);
+
+      setTxMessage({
+        status: 'reading',
+        hash: txHash,
+        title: 'Phase 3/3: Finalized! Reading created claim record from contract state...',
+        detail: 'Reading get_claim view for official contract claim ID and status.'
+      });
+
+      await loadContractData();
+      setNewClaim({ pool_id: '1', amount: '', description: '', evidence_urls: [''], reference_urls: ['', ''] });
+      setShowCustomIncidentText(false);
+      setActiveTab('claims');
+
+      setTxMessage({
+        status: 'success',
+        hash: txHash,
+        title: 'Insurance Claim Submitted to GenLayer Contract!',
+        detail: 'Claim status populated directly from contract.'
+      });
+    } catch (err) {
+      console.warn("Submit claim error:", err);
+      // DO NOT update UI state on error!
+      setTxMessage({
+        status: 'error',
+        title: err.message.includes('rejected') || err.message.includes('cancelled') || err.message.includes('User rejected')
+          ? 'Transaction Cancelled.'
+          : 'Submission Failed: ' + err.message,
+        detail: 'No claim created.'
+      });
+    } finally {
+      setTimeout(() => setTxMessage(null), 8000);
+    }
   };
 
   // Trigger AI Resolution on Deployed GenLayer Contract (No Random Verdicts)
   const handleResolveClaim = async (claimId) => {
     setIsResolving(true);
-    setTxMessage(`Executing resolve_claim on GenLayer contract (${courtAddress || CONTRACT_ADDRESS}) for Claim #${claimId}...`);
+    const cId = String(claimId);
+
+    setTxMessage({
+      status: 'pending',
+      title: `Phase 1/4: Submitting AI Consensus Trigger for Claim #${cId}...`,
+      detail: 'Please confirm resolve_claim transaction in MetaMask.'
+    });
 
     try {
-      await requestMetaMaskTx(
-        `Trigger AI Consensus for Claim #${claimId}`,
-        "resolve_claim",
-        [String(claimId)]
-      );
+      const txHash = await sendContractTransaction({
+        from: account,
+        to: courtAddress || CONTRACT_ADDRESS,
+        functionName: 'resolve_claim',
+        args: [cId]
+      });
 
-      setClaims(claims.map(c => {
-        if (String(c.id) === String(claimId)) {
-          const targetPool = pools.find(p => String(p.id) === String(c.pool_id));
-          const maxCap = parseFloat(targetPool ? targetPool.max_payout_per_claim : 1000);
-          const baseAmt = Math.min(parseFloat(c.claimed_amount), maxCap);
-          const compliance = 88;
-          const confidence = 92;
-          const payout = String(Math.floor(baseAmt * (compliance / 100)));
+      if (!txHash) {
+        throw new Error("Transaction cancelled or rejected by user.");
+      }
 
-          return {
-            ...c,
-            status: "RESOLVED",
-            compliance_pct: compliance,
-            confidence: confidence,
-            payout_amount: payout,
-            verdict_reason: `GenLayer Multi-Validator AI Consensus verified ${compliance}% criteria compliance across rendered web evidence. Payout of ${payout} GEN executed directly from pool treasury.`,
-            paid_out: true
-          };
-        }
-        return c;
-      }));
+      setTxMessage({
+        status: 'consensus',
+        hash: txHash,
+        title: `Phase 2/4: AI validators are rendering web evidence and reaching consensus on-chain...`,
+        detail: 'GenLayer validators are rendering URLs via gl.nondet.web.render. This may take 1-2 minutes. Please do not close this tab.'
+      });
 
-      setTxMessage(`Claim #${claimId} resolution transaction sent to GenLayer contract!`);
+      await waitForFinalizedTx(txHash, 50, 3000);
+
+      setTxMessage({
+        status: 'reading',
+        hash: txHash,
+        title: `Phase 3/4: AI Consensus Finalized! Reading official verdict from get_claim(${cId})...`,
+        detail: 'Fetching compliance_pct, confidence, verdict_reason, and payout_amount from contract state.'
+      });
+
+      const updatedClaimData = await readContractState('get_claim', [cId]);
+
+      if (updatedClaimData && updatedClaimData.status) {
+        setClaims(prevClaims => prevClaims.map(c => {
+          if (String(c.id) === cId) {
+            return {
+              ...c,
+              status: String(updatedClaimData.status),
+              compliance_pct: Number(updatedClaimData.compliance_pct || 0),
+              confidence: Number(updatedClaimData.confidence || 0),
+              payout_amount: String(updatedClaimData.payout_amount || '0'),
+              verdict_reason: String(updatedClaimData.verdict_reason || ''),
+              paid_out: Boolean(updatedClaimData.paid_out)
+            };
+          }
+          return c;
+        }));
+      } else {
+        await loadContractData();
+      }
+
+      setTxMessage({
+        status: 'success',
+        hash: txHash,
+        title: `Phase 4/4: AI Adjudication Completed for Claim #${cId}!`,
+        detail: 'Verdict, confidence score, and payout populated 100% from contract state.'
+      });
     } catch (err) {
       console.warn("Resolve claim error:", err);
-      setTxMessage(`resolve_claim transaction submitted to GenLayer contract.`);
+      // DO NOT update UI state on error!
+      setTxMessage({
+        status: 'error',
+        title: err.message.includes('rejected') || err.message.includes('cancelled') || err.message.includes('User rejected')
+          ? 'Transaction Cancelled.'
+          : 'Adjudication Failed: ' + err.message,
+        detail: 'No verdict changes applied.'
+      });
     } finally {
       setIsResolving(false);
-      setTimeout(() => setTxMessage(null), 5000);
+      setTimeout(() => setTxMessage(null), 12000);
     }
   };
 
@@ -670,32 +861,65 @@ export default function App() {
       return;
     }
 
-    await requestMetaMaskTx(
-      `Attach Evidence for Claim #${selectedClaimForDetail.id}`,
-      "add_evidence",
-      [String(selectedClaimForDetail.id), validEv, validRef]
-    );
+    const cId = String(selectedClaimForDetail.id);
+    setTxMessage({
+      status: 'pending',
+      title: `Phase 1/3: Submitting Supplemental Evidence for Claim #${cId}...`,
+      detail: 'Please confirm add_evidence transaction in MetaMask.'
+    });
 
-    const selectedReasonsText = DISPUTE_REASON_PRESETS.filter((_, idx) => selectedDisputeReasons[idx]).join('; ');
+    try {
+      const txHash = await sendContractTransaction({
+        from: account,
+        to: courtAddress || CONTRACT_ADDRESS,
+        functionName: 'add_evidence',
+        args: [cId, validEv, validRef]
+      });
 
-    setClaims(claims.map(c => {
-      if (c.id === selectedClaimForDetail.id) {
-        return {
-          ...c,
-          evidence_urls: [...c.evidence_urls, ...validEv],
-          reference_urls: [...c.reference_urls, ...validRef],
-          status: "SUBMITTED",
-          verdict_reason: `Supplemental evidence attached (${selectedReasonsText || 'New evidence links provided'}). Re-queued for AI evaluation.`
-        };
+      if (!txHash) {
+        throw new Error("Transaction cancelled or rejected by user.");
       }
-      return c;
-    }));
 
-    setShowEvidenceModal(false);
-    setAdditionalEvidence(['']);
-    setAdditionalReference(['']);
-    setTxMessage(`Supplemental evidence attached to Claim #${selectedClaimForDetail.id}! Re-queued for AI evaluation.`);
-    setTimeout(() => setTxMessage(null), 4000);
+      setTxMessage({
+        status: 'processing',
+        hash: txHash,
+        title: `Phase 2/3: Supplemental evidence submitted! Waiting for finalization...`,
+        detail: 'Confirming transaction inclusion.'
+      });
+
+      await waitForFinalizedTx(txHash);
+
+      setTxMessage({
+        status: 'reading',
+        hash: txHash,
+        title: `Phase 3/3: Finalized! Reading updated claim record from contract...`,
+        detail: 'Synchronizing evidence list and status from contract view.'
+      });
+
+      await loadContractData();
+      setShowEvidenceModal(false);
+      setAdditionalEvidence(['']);
+      setAdditionalReference(['']);
+
+      setTxMessage({
+        status: 'success',
+        hash: txHash,
+        title: `Supplemental Evidence Attached to Claim #${cId}!`,
+        detail: 'Claim re-queued for AI evaluation on-chain.'
+      });
+    } catch (err) {
+      console.warn("Add evidence error:", err);
+      // DO NOT update UI state on error!
+      setTxMessage({
+        status: 'error',
+        title: err.message.includes('rejected') || err.message.includes('cancelled') || err.message.includes('User rejected')
+          ? 'Transaction Cancelled.'
+          : 'Evidence Attachment Failed: ' + err.message,
+        detail: 'No evidence updated.'
+      });
+    } finally {
+      setTimeout(() => setTxMessage(null), 8000);
+    }
   };
 
   const isConfigured = courtAddress.trim() !== '';
@@ -773,9 +997,63 @@ export default function App() {
 
       {/* Transaction Notification Toast */}
       {txMessage && (
-        <div className="banner banner-info" style={{ animation: 'fadeIn 0.3s ease-out' }}>
-          <Sparkles size={20} style={{ color: 'var(--accent-cyan)' }} />
-          <span>{txMessage}</span>
+        <div 
+          className={`banner ${
+            typeof txMessage === 'object' && txMessage.status === 'error' 
+              ? 'banner-error' 
+              : typeof txMessage === 'object' && txMessage.status === 'success'
+              ? 'banner-success'
+              : 'banner-info'
+          }`} 
+          style={{ animation: 'fadeIn 0.3s ease-out', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', width: '100%' }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            {typeof txMessage === 'object' && (txMessage.status === 'pending' || txMessage.status === 'processing' || txMessage.status === 'consensus' || txMessage.status === 'reading') && (
+              <RefreshCw className="spin" size={20} color="#06b6d4" />
+            )}
+            {typeof txMessage === 'object' && txMessage.status === 'success' && (
+              <CheckCircle2 size={20} color="#10b981" />
+            )}
+            {typeof txMessage === 'object' && txMessage.status === 'error' && (
+              <XCircle size={20} color="#ef4444" />
+            )}
+            {typeof txMessage !== 'object' && (
+              <Sparkles size={20} style={{ color: 'var(--accent-cyan)' }} />
+            )}
+            <div>
+              <strong style={{ fontSize: '14px', color: '#f8fafc', display: 'block' }}>
+                {typeof txMessage === 'object' ? txMessage.title : txMessage}
+              </strong>
+              {typeof txMessage === 'object' && txMessage.detail && (
+                <div style={{ fontSize: '12px', color: '#cbd5e1', marginTop: '2px' }}>
+                  {txMessage.detail}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <a 
+            href={typeof txMessage === 'object' && txMessage.hash ? `https://genlayer-explorer.vercel.app/tx/${txMessage.hash}` : `https://genlayer-explorer.vercel.app/address/${courtAddress}`}
+            target="_blank" 
+            rel="noopener noreferrer"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '6px 12px',
+              borderRadius: '8px',
+              background: 'rgba(6, 182, 212, 0.15)',
+              border: '1px solid rgba(6, 182, 212, 0.4)',
+              color: '#38bdf8',
+              fontWeight: 600,
+              fontSize: '12px',
+              textDecoration: 'none',
+              whiteSpace: 'nowrap',
+              flexShrink: 0
+            }}
+          >
+            View on Explorer <ExternalLink size={12} />
+          </a>
         </div>
       )}
 

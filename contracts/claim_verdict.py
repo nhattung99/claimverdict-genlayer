@@ -228,7 +228,7 @@ class ClaimVerdict(gl.Contract):
                     body_text = res.body if hasattr(res, 'body') else str(res)
                     evidence_contents.append(f"Evidence [{u}]: {body_text}")
                 except Exception as e:
-                    raise UserError(f"Failed to render evidence URL '{u}': {str(e)}")
+                    evidence_contents.append(f"Evidence [{u}]: (failed to fetch: {str(e)})")
 
             reference_contents = []
             for u in reference_urls_list:
@@ -237,7 +237,7 @@ class ClaimVerdict(gl.Contract):
                     body_text = res.body if hasattr(res, 'body') else str(res)
                     reference_contents.append(f"Independent Reference [{u}]: {body_text}")
                 except Exception as e:
-                    raise UserError(f"Failed to render reference URL '{u}': {str(e)}")
+                    reference_contents.append(f"Independent Reference [{u}]: (failed to fetch: {str(e)})")
 
             prompt = f"""You are an impartial AI insurance claim adjudicator on GenLayer.
 Policy Type: "{pool.coverage_type}"
@@ -264,7 +264,9 @@ Return ONLY a valid raw JSON object with NO markdown formatting, NO backticks:
             return _parse_verdict_json(raw)
 
         def validator_fn(leader_res) -> bool:
-            leader_val_dict = getattr(leader_res, 'value', leader_res)
+            if not isinstance(leader_res, gl.vm.Return):
+                return False
+            leader_val_dict = leader_res.calldata
             if not isinstance(leader_val_dict, dict) or "compliance_pct" not in leader_val_dict:
                 return False
             try:
@@ -277,10 +279,11 @@ Return ONLY a valid raw JSON object with NO markdown formatting, NO backticks:
             return abs(my_val - leader_val) <= 5
 
         result = gl.vm.run_nondet(leader_fn, validator_fn)
+        result_data = result.calldata if hasattr(result, 'calldata') else result
 
-        comp_pct = u256(result["compliance_pct"])
-        confidence = u256(result["confidence"])
-        reason = str(result["reason"])
+        comp_pct = u256(result_data["compliance_pct"])
+        confidence = u256(result_data["confidence"])
+        reason = str(result_data["reason"])
 
         claim.compliance_pct = comp_pct
         claim.confidence = confidence
