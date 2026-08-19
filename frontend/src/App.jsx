@@ -305,8 +305,9 @@ export default function App() {
   const [reputationAddress, setReputationAddress] = useState(import.meta.env.VITE_REPUTATION_ADDRESS || '');
 
   const [activeTab, setActiveTab] = useState('pools'); // 'pools' | 'claims' | 'submit' | 'disputed'
-  const [pools, setPools] = useState(INITIAL_DEMO_POOLS);
-  const [claims, setClaims] = useState(INITIAL_DEMO_CLAIMS);
+  const [pools, setPools] = useState([]);
+  const [claims, setClaims] = useState([]);
+  const [isLoadingContract, setIsLoadingContract] = useState(true);
 
   // Modals & UI States
   const [showCreatePoolModal, setShowCreatePoolModal] = useState(false);
@@ -342,7 +343,7 @@ export default function App() {
   const [showCustomIncidentText, setShowCustomIncidentText] = useState(false);
 
   const [newClaim, setNewClaim] = useState({
-    pool_id: '0',
+    pool_id: '1',
     amount: '',
     description: '',
     evidence_urls: [''],
@@ -364,28 +365,30 @@ export default function App() {
       reference_urls: [...(sampleSet.referenceUrls || ['', ''])]
     }));
     setShowSamplePopover(false);
-    setTxMessage(`Loaded sample dataset: "${sampleSet.label}"!`);
+    setTxMessage(`Loaded sample dataset: "${sampleSet.label}" into claim form!`);
     setTimeout(() => setTxMessage(null), 4000);
   };
 
   // GenLayer Contract Transaction Helper
   const requestMetaMaskTx = async (actionTitle, functionName, args = [], value = '0x0') => {
+    const targetAddr = (courtAddress && courtAddress.trim()) ? courtAddress.trim() : CONTRACT_ADDRESS;
     try {
-      setTxMessage(`Submitting transaction for ${actionTitle} to GenLayer Contract (${courtAddress || CONTRACT_ADDRESS})...`);
+      setTxMessage({
+        status: 'pending',
+        title: `Phase 1/3: Submitting ${actionTitle} to MetaMask...`,
+        detail: `Executing on contract ${targetAddr}. Please sign in MetaMask.`
+      });
       const txHash = await sendContractTransaction({
         from: account,
-        to: courtAddress || CONTRACT_ADDRESS,
+        to: targetAddr,
         functionName,
         args,
         value
       });
-      if (txHash) {
-        setTxMessage(`Transaction submitted to GenLayer Studionet! Tx Hash: ${String(txHash).slice(0, 14)}...`);
-      }
       return txHash;
     } catch (err) {
       console.warn("Contract transaction note:", err.message || err);
-      return null;
+      throw err;
     }
   };
 
@@ -411,7 +414,7 @@ export default function App() {
 
   // Connect Wallet
   const connectWallet = async () => {
-    if (window.ethereum) {
+    if (typeof window !== 'undefined' && window.ethereum) {
       try {
         await switchToGenlayerStudionet();
         const accs = await window.ethereum.request({ method: 'eth_requestAccounts' });
@@ -467,15 +470,17 @@ export default function App() {
     setForm({ ...form, [key]: [...currentArray, ''] });
   };
 
-  // Load Contract State View Methods
+  // Load Contract State View Methods (Reads strictly from selected courtAddress)
   const loadContractData = async () => {
+    setIsLoadingContract(true);
+    const targetAddr = (courtAddress && courtAddress.trim()) ? courtAddress.trim() : CONTRACT_ADDRESS;
     try {
       const loadedPools = [];
       for (let i = 1; i <= 10; i++) {
         const pId = String(i);
-        const pool = await readContractState('get_pool', [pId]);
+        const pool = await readContractState('get_pool', [pId], targetAddr);
         if (pool && pool.coverage_type && String(pool.coverage_type).trim() !== '') {
-          const bal = await readContractState('get_pool_balance', [pId]);
+          const bal = await readContractState('get_pool_balance', [pId], targetAddr);
           loadedPools.push({
             id: pId,
             coverage_type: String(pool.coverage_type),
@@ -487,14 +492,12 @@ export default function App() {
           });
         }
       }
-      if (loadedPools.length > 0) {
-        setPools(loadedPools);
-      }
+      setPools(loadedPools);
 
       const loadedClaims = [];
       for (let j = 1; j <= 20; j++) {
         const cId = String(j);
-        const claim = await readContractState('get_claim', [cId]);
+        const claim = await readContractState('get_claim', [cId], targetAddr);
         if (claim && claim.pool_id && String(claim.pool_id).trim() !== '') {
           loadedClaims.push({
             id: cId,
@@ -513,17 +516,19 @@ export default function App() {
           });
         }
       }
-      if (loadedClaims.length > 0) {
-        setClaims(loadedClaims);
-      }
+      setClaims(loadedClaims);
     } catch (err) {
       console.warn("loadContractData note:", err);
+      setPools([]);
+      setClaims([]);
+    } finally {
+      setIsLoadingContract(false);
     }
   };
 
   useEffect(() => {
     loadContractData();
-  }, []);
+  }, [courtAddress]);
 
   // Handle Create Pool (Template Guided Flow) - On-Chain Finalized Execution
   const handleCreatePoolSubmit = async (e) => {
@@ -805,7 +810,8 @@ export default function App() {
         detail: 'Fetching compliance_pct, confidence, verdict_reason, and payout_amount from contract state.'
       });
 
-      const updatedClaimData = await readContractState('get_claim', [cId]);
+      const targetAddr = (courtAddress && courtAddress.trim()) ? courtAddress.trim() : CONTRACT_ADDRESS;
+      const updatedClaimData = await readContractState('get_claim', [cId], targetAddr);
 
       if (updatedClaimData && updatedClaimData.status) {
         setClaims(prevClaims => prevClaims.map(c => {
@@ -1105,69 +1111,88 @@ export default function App() {
             </button>
           </div>
 
-          <div className="grid-2">
-            {pools.map(pool => (
-              <div key={pool.id} className="card pool-card">
-                <div className="card-header">
-                  <div>
-                    <span style={{ fontSize: '12px', color: 'var(--accent-indigo)', fontWeight: '700' }}>
-                      POOL #{pool.id}
-                    </span>
-                    <h3 className="card-title">{pool.coverage_type}</h3>
+          {isLoadingContract ? (
+            <div className="card" style={{ textAlign: 'center', padding: '40px 20px' }}>
+              <RefreshCw className="spin" size={32} color="var(--accent-cyan)" style={{ marginBottom: '12px' }} />
+              <div style={{ color: '#f8fafc', fontSize: '14px' }}>Loading policy pools from GenLayer contract...</div>
+            </div>
+          ) : pools.length === 0 ? (
+            <div className="card" style={{ textAlign: 'center', padding: '40px 20px' }}>
+              <Layers size={40} color="var(--accent-cyan)" style={{ marginBottom: '12px', opacity: 0.8 }} />
+              <h3 style={{ fontSize: '16px', color: '#f8fafc', marginBottom: '8px' }}>No On-Chain Policy Pools Found</h3>
+              <p style={{ fontSize: '13px', color: 'var(--text-muted)', maxWidth: '480px', margin: '0 auto 16px' }}>
+                No active policy pools have been created on contract <code style={{ color: 'var(--accent-cyan)' }}>{courtAddress}</code>. Click below to create and deploy the first pool on-chain.
+              </p>
+              <button className="btn btn-primary" onClick={() => setShowCreatePoolModal(true)}>
+                <PlusCircle size={18} />
+                Create Policy Pool
+              </button>
+            </div>
+          ) : (
+            <div className="grid-2">
+              {pools.map(pool => (
+                <div key={pool.id} className="card pool-card">
+                  <div className="card-header">
+                    <div>
+                      <span style={{ fontSize: '12px', color: 'var(--accent-indigo)', fontWeight: '700' }}>
+                        POOL #{pool.id}
+                      </span>
+                      <h3 className="card-title">{pool.coverage_type}</h3>
+                    </div>
+                    <span className="badge badge-resolved">Active</span>
                   </div>
-                  <span className="badge badge-resolved">Active</span>
-                </div>
 
-                <div className="pool-stats">
-                  <div>
-                    <div className="stat-label">Pool Fund Balance</div>
-                    <div className="stat-value text-cyan">{pool.pool_balance} GEN</div>
+                  <div className="pool-stats">
+                    <div>
+                      <div className="stat-label">Pool Fund Balance</div>
+                      <div className="stat-value text-cyan">{pool.pool_balance} GEN</div>
+                    </div>
+                    <div>
+                      <div className="stat-label">Max Payout / Claim</div>
+                      <div className="stat-value">{pool.max_payout_per_claim} GEN</div>
+                    </div>
                   </div>
-                  <div>
-                    <div className="stat-label">Max Payout / Claim</div>
-                    <div className="stat-value">{pool.max_payout_per_claim} GEN</div>
-                  </div>
-                </div>
 
-                <div style={{ marginBottom: '16px' }}>
-                  <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '8px' }}>
-                    Eligibility & Validity Criteria:
+                  <div style={{ marginBottom: '16px' }}>
+                    <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '8px' }}>
+                      Eligibility & Validity Criteria:
+                    </div>
+                    <ul className="criteria-list">
+                      {pool.criteria.map((c, i) => (
+                        <li key={i} className="criteria-item">
+                          <CheckCircle2 size={14} style={{ color: 'var(--accent-emerald)', marginTop: '3px', flexShrink: 0 }} />
+                          <span>{c}</span>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
-                  <ul className="criteria-list">
-                    {pool.criteria.map((c, i) => (
-                      <li key={i} className="criteria-item">
-                        <CheckCircle2 size={14} style={{ color: 'var(--accent-emerald)', marginTop: '3px', flexShrink: 0 }} />
-                        <span>{c}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
 
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  <button 
-                    className="btn btn-cyan" 
-                    style={{ flex: 1 }}
-                    onClick={() => {
-                      setSelectedPoolForDeposit(pool);
-                      setShowDepositModal(true);
-                    }}
-                  >
-                    <Coins size={16} />
-                    Fund Pool (Deposit GEN)
-                  </button>
-                  <button 
-                    className="btn btn-secondary"
-                    onClick={() => {
-                      setNewClaim({ ...newClaim, pool_id: pool.id });
-                      setActiveTab('submit');
-                    }}
-                  >
-                    File Claim
-                  </button>
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <button 
+                      className="btn btn-cyan" 
+                      style={{ flex: 1 }}
+                      onClick={() => {
+                        setSelectedPoolForDeposit(pool);
+                        setShowDepositModal(true);
+                      }}
+                    >
+                      <Coins size={16} />
+                      Fund Pool (Deposit GEN)
+                    </button>
+                    <button 
+                      className="btn btn-secondary"
+                      onClick={() => {
+                        setNewClaim({ ...newClaim, pool_id: pool.id });
+                        setActiveTab('submit');
+                      }}
+                    >
+                      File Claim
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -1181,8 +1206,26 @@ export default function App() {
             </p>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            {claims.map(claim => {
+          {isLoadingContract ? (
+            <div className="card" style={{ textAlign: 'center', padding: '40px 20px' }}>
+              <RefreshCw className="spin" size={32} color="var(--accent-cyan)" style={{ marginBottom: '12px' }} />
+              <div style={{ color: '#f8fafc', fontSize: '14px' }}>Loading claims from GenLayer contract...</div>
+            </div>
+          ) : claims.length === 0 ? (
+            <div className="card" style={{ textAlign: 'center', padding: '40px 20px' }}>
+              <FileText size={40} color="var(--accent-cyan)" style={{ marginBottom: '12px', opacity: 0.8 }} />
+              <h3 style={{ fontSize: '16px', color: '#f8fafc', marginBottom: '8px' }}>No On-Chain Claims Found</h3>
+              <p style={{ fontSize: '13px', color: 'var(--text-muted)', maxWidth: '480px', margin: '0 auto 16px' }}>
+                No claims have been submitted to contract <code style={{ color: 'var(--accent-cyan)' }}>{courtAddress}</code> yet. Click below to file a new claim.
+              </p>
+              <button className="btn btn-primary" onClick={() => setActiveTab('submit')}>
+                <PlusCircle size={18} />
+                File New Claim
+              </button>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {claims.map(claim => {
               const pool = pools.find(p => p.id === claim.pool_id);
               return (
                 <div key={claim.id} className="card">
@@ -1254,6 +1297,7 @@ export default function App() {
               );
             })}
           </div>
+          )}
         </div>
       )}
 

@@ -116,14 +116,17 @@ export const encodeGenLayerCalldata = (method, args = []) => {
   return toRlp([toHex(new Uint8Array(arr))]);
 };
 
-// Execute Write Transaction on GenLayer Contract via MetaMask or Client
+// Execute Write Transaction on GenLayer Contract via MetaMask
 export const sendContractTransaction = async ({ from, to = CONTRACT_ADDRESS, functionName, args = [], value = '0x0' }) => {
   await switchToGenlayerStudionet();
   const calldata = encodeGenLayerCalldata(functionName, args);
 
-  if (window.ethereum) {
+  if (typeof window !== 'undefined' && window.ethereum) {
     const accs = await window.ethereum.request({ method: 'eth_requestAccounts' });
-    const sender = from || accs[0];
+    const sender = from || (accs && accs[0]);
+    if (!sender) {
+      throw new Error("No connected wallet account found. Please connect MetaMask to execute write actions.");
+    }
     
     const txHash = await window.ethereum.request({
       method: 'eth_sendTransaction',
@@ -136,13 +139,7 @@ export const sendContractTransaction = async ({ from, to = CONTRACT_ADDRESS, fun
     });
     return txHash;
   } else {
-    const client = getGenlayerClient();
-    if (!client) throw new Error("GenLayer client unavailable");
-    return await client.readContract({
-      address: to,
-      functionName,
-      args
-    });
+    throw new Error("Signed Web3 Wallet Required: Please connect MetaMask to execute write transactions on GenLayer.");
   }
 };
 
@@ -190,13 +187,14 @@ export const waitForFinalizedTx = async (txHash, maxRetries = 25, intervalMs = 2
   return true;
 };
 
-// Read Contract View Methods (`get_pool`, `get_claim`, `get_pool_balance`)
-export const readContractState = async (functionName, args = []) => {
+// Read Contract View Methods (`get_pool`, `get_claim`, `get_pool_balance`) using selected contract address
+export const readContractState = async (functionName, args = [], targetAddress = CONTRACT_ADDRESS) => {
+  const addr = targetAddress || CONTRACT_ADDRESS;
   try {
     const client = getGenlayerClient();
     if (client && client.readContract) {
       return await client.readContract({
-        address: CONTRACT_ADDRESS,
+        address: addr,
         functionName,
         args
       });
@@ -214,7 +212,7 @@ export const readContractState = async (functionName, args = []) => {
         jsonrpc: '2.0',
         id: 1,
         method: 'eth_call',
-        params: [{ to: CONTRACT_ADDRESS, data: calldata }, 'latest']
+        params: [{ to: addr, data: calldata }, 'latest']
       })
     }).then(r => r.json());
     return res?.result;
