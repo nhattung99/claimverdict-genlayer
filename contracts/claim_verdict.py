@@ -330,7 +330,7 @@ Return ONLY a valid raw JSON object with NO markdown formatting, NO backticks:
             self.pools[claim.pool_id] = pool
 
             try:
-                # Attempt native transfer to claimant
+                # Attempt native transfer to claimant using GenLayer VM emit_transfer
                 gl.get_contract_at(claim.claimant).emit_transfer(value=u256(payout))
                 claim.paid_out = True
                 claim.status = "RESOLVED"
@@ -362,6 +362,76 @@ Return ONLY a valid raw JSON object with NO markdown formatting, NO backticks:
         self.claimant_sum_compliance[c_key] = self.claimant_sum_compliance.get(c_key, bigint(0)) + bigint(result_data["compliance_pct"])
 
         self.claims[claim_id] = claim
+
+    @gl.public.write
+    def retry_resolution(self, claim_id: str) -> None:
+        if claim_id not in self.claims:
+            raise UserError("Claim does not exist")
+        claim = self.claims[claim_id]
+
+        sender = gl.message.sender_address
+        pool = self.pools[claim.pool_id]
+        if sender != claim.claimant and sender != pool.operator and sender != self.owner:
+            raise UserError("Only claimant or pool operator can retry claim resolution")
+
+        if claim.status not in ["PAYOUT_FAILED", "REJECTED_NO_FUNDS"]:
+            raise UserError(f"Cannot retry resolution for claim in status: {claim.status}")
+
+        # If AI verdict was already rendered (confidence >= 60), retry payout execution directly without re-running AI consensus
+        if claim.confidence >= u256(60) and claim.compliance_pct > u256(0):
+            base_amount = claim.claimed_amount
+            if base_amount > pool.max_payout_per_claim:
+                base_amount = pool.max_payout_per_claim
+
+            payout = (base_amount * bigint(claim.compliance_pct)) // bigint(100)
+            claim.payout_amount = payout
+
+            current_pool_bal = self.pool_balances.get(claim.pool_id, bigint(0))
+            if payout > bigint(0):
+                if current_pool_bal < payout:
+                    claim.status = "REJECTED_NO_FUNDS"
+                    claim.verdict_reason = "Policy pool balance remains insufficient for payout"
+                    claim.paid_out = False
+                    self.claims[claim_id] = claim
+                    return
+
+                # Reserve escrow balance
+                self.pool_balances[claim.pool_id] = current_pool_bal - payout
+                pool.pool_balance -= payout
+                self.pools[claim.pool_id] = pool
+
+                try:
+                    gl.get_contract_at(claim.claimant).emit_transfer(value=u256(payout))
+                    claim.paid_out = True
+                    claim.status = "RESOLVED"
+                    claim.verdict_reason += " (Payout successfully executed on retry)"
+
+                    p_total = self.pool_total_claims.get(claim.pool_id, bigint(0))
+                    p_payouts = self.pool_total_payouts.get(claim.pool_id, bigint(0))
+                    self.pool_total_claims[claim.pool_id] = p_total + bigint(1)
+                    self.pool_total_payouts[claim.pool_id] = p_payouts + payout
+                except Exception as e:
+                    # Rollback on transfer failure
+                    self.pool_balances[claim.pool_id] = current_pool_bal
+                    pool.pool_balance += payout
+                    self.pools[claim.pool_id] = pool
+
+                    claim.paid_out = False
+                    claim.status = "PAYOUT_FAILED"
+                    claim.verdict_reason += f" (Retry payout transfer failed: {str(e)})"
+                    self.claims[claim_id] = claim
+                    return
+            else:
+                claim.paid_out = True
+                claim.status = "RESOLVED"
+
+            self.claims[claim_id] = claim
+        else:
+            # AI consensus not run yet or needs re-evaluation: reset to SUBMITTED and re-run resolution
+            claim.status = "SUBMITTED"
+            claim.verdict_reason = "Re-queued for resolution retry"
+            self.claims[claim_id] = claim
+            self.resolve_claim(claim_id)
 
     @gl.public.view
     def get_pool(self, pool_id: str) -> dict:

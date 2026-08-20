@@ -69,6 +69,7 @@ def test_claim_verdict_single_contract_flow(direct_vm, direct_deploy, direct_acc
     court.resolve_claim(claim_id)
 
     resolved_claim = court.get_claim(claim_id)
+    print("DEBUG resolved_claim:", resolved_claim)
     assert resolved_claim["status"] == "RESOLVED"
     assert resolved_claim["compliance_pct"] == 100
     assert resolved_claim["payout_amount"] == "800"
@@ -253,6 +254,7 @@ def test_base_units_wei_roundtrip(direct_vm, direct_deploy, direct_accounts):
     pool_id = court.create_policy_pool("Auto", ["Collision report"], ten_gen_wei)
 
     direct_vm.value = ten_gen_wei
+    direct_vm._balances[court.address] = direct_vm._balances.get(court.address, 0) + ten_gen_wei
     court.deposit_to_pool(pool_id)
     direct_vm.value = 0
 
@@ -279,4 +281,94 @@ def test_base_units_wei_roundtrip(direct_vm, direct_deploy, direct_accounts):
     assert res_claim["status"] == "RESOLVED"
     assert res_claim["payout_amount"] == str(five_gen_wei)
     assert court.get_pool_balance(pool_id) == str(five_gen_wei)
+
+
+def test_retry_resolution_after_funding(direct_vm, direct_deploy, direct_accounts):
+    operator = direct_accounts[1]
+    claimant = direct_accounts[2]
+
+    court = direct_deploy("contracts/claim_verdict.py")
+
+    direct_vm.sender = operator
+    pool_id = court.create_policy_pool("Health", ["Hospitalization"], 5000)
+
+    # Initial zero balance -> submit claim
+    direct_vm.sender = claimant
+    claim_id = court.submit_claim(
+        pool_id,
+        1000,
+        "ER visit for fracture",
+        ["https://example.com/er.html"],
+        ["https://example.com/hosp1.html", "https://example.com/hosp2.html"]
+    )
+
+    # Claim rejected due to zero funds
+    assert court.get_claim(claim_id)["status"] == "REJECTED_NO_FUNDS"
+
+    # Now operator deposits funds to pool
+    direct_vm.sender = operator
+    direct_vm.value = 5000
+    direct_vm._balances[court.address] = direct_vm._balances.get(court.address, 0) + 5000
+    court.deposit_to_pool(pool_id)
+    direct_vm.value = 0
+
+    direct_vm.mock_web("https://example.com/er.html", "ER discharge summary")
+    direct_vm.mock_web("https://example.com/hosp1.html", "Patient record confirmed")
+    direct_vm.mock_web("https://example.com/hosp2.html", "Billing confirmed 1000")
+    direct_vm.mock_llm(".*", '{"compliance_pct": 100, "confidence": 90, "reason": "ER visit verified"}')
+
+    # Claimant calls retry_resolution -> status transitions to RESOLVED and pays out!
+    direct_vm.sender = claimant
+    court.retry_resolution(claim_id)
+
+    res_claim = court.get_claim(claim_id)
+    assert res_claim["status"] == "RESOLVED"
+    assert res_claim["payout_amount"] == "1000"
+    assert res_claim["paid_out"] == True
+    assert court.get_pool_balance(pool_id) == str(5000 - 1000)
+
+
+def test_transfer_failure_rollback(direct_vm, direct_deploy, direct_accounts, monkeypatch):
+    operator = direct_accounts[1]
+    claimant = direct_accounts[2]
+
+    court = direct_deploy("contracts/claim_verdict.py")
+
+    direct_vm.sender = operator
+    pool_id = court.create_policy_pool("Flight", ["Cancellation"], 5000)
+
+    # Fund internal pool balance to 3000 wei
+    court.pool_balances[pool_id] = 3000
+    pool = court.pools[pool_id]
+    pool.pool_balance = 3000
+    court.pools[pool_id] = pool
+
+    import gltest.direct.loader
+    def failing_emit_transfer(self, value):
+        raise Exception("Simulated native transfer execution failure")
+
+    monkeypatch.setattr(gltest.direct.loader._EOAProxy, "emit_transfer", failing_emit_transfer)
+
+    direct_vm.sender = claimant
+    claim_id = court.submit_claim(
+        pool_id,
+        1000,
+        "Storm cancellation",
+        ["https://example.com/proof.html"],
+        ["https://example.com/ref1.html", "https://example.com/ref2.html"]
+    )
+
+    direct_vm.mock_web("https://example.com/proof.html", "Flight cancelled")
+    direct_vm.mock_web("https://example.com/ref1.html", "Confirmed")
+    direct_vm.mock_web("https://example.com/ref2.html", "Confirmed")
+    direct_vm.mock_llm(".*", '{"compliance_pct": 100, "confidence": 95, "reason": "Approved"}')
+
+    direct_vm.sender = operator
+    court.resolve_claim(claim_id)
+
+    res_claim = court.get_claim(claim_id)
+    # Transfer failed due to mocked exception -> status is PAYOUT_FAILED, paid_out is False, pool_balance rolled back to 3000!
+    assert res_claim["status"] == "PAYOUT_FAILED"
+    assert res_claim["paid_out"] == False
+    assert court.get_pool_balance(pool_id) == "3000"
 

@@ -26,6 +26,34 @@ export const getGenlayerClient = () => {
   }
 };
 
+// Base-Unit (Wei) Converter Helpers: 1 GEN = 10^18 base units (wei)
+export const parseGenToWei = (genAmountStr) => {
+  if (!genAmountStr) return 0n;
+  try {
+    const num = parseFloat(genAmountStr);
+    if (isNaN(num) || num <= 0) return 0n;
+    return BigInt(Math.floor(num * 1e18));
+  } catch (err) {
+    return 0n;
+  }
+};
+
+export const formatWeiToGen = (val) => {
+  if (val === null || val === undefined || val === '') return '0';
+  try {
+    const b = BigInt(val);
+    if (b === 0n) return '0';
+    if (b >= 100000000000000n) {
+      const genFloat = Number(b) / 1e18;
+      if (Number.isInteger(genFloat)) return String(genFloat);
+      return genFloat.toFixed(4).replace(/\.?0+$/, '');
+    }
+    return String(b);
+  } catch (err) {
+    return String(val);
+  }
+};
+
 export const switchToGenlayerStudionet = async () => {
   if (typeof window === 'undefined' || !window.ethereum) return;
   try {
