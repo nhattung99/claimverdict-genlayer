@@ -67,6 +67,25 @@ tests\test_claim_court.py ....                                          [100%]
 2. **`test_claim_validation_errors`**: Validates errors when $<2$ reference URLs provided or `claimed_amount <= 0`.
 3. **`test_low_confidence_disputed_flow`**: Validates transition to `DISPUTED` on low confidence ($<60\%$) and supplemental evidence re-queueing (`add_evidence`).
 4. **`test_insufficient_pool_funds`**: Validates transition to `REJECTED_NO_FUNDS` on zero pool balance.
+5. **`test_escrow_reservation_insufficient_funds_on_resolve`**: Asserts escrow reservation pre-check on `resolve_claim` and status transition to `REJECTED_NO_FUNDS` without corrupting pool balance.
+6. **`test_base_units_wei_roundtrip`**: Verifies base-unit wei calculations ($10^{18}$ wei per GEN) end-to-end on contract state.
+
+---
+
+## 🛡️ Steward Audit & Fix Log
+
+1. **Point 1 — Native-GEN / Base-Unit Standardization**:
+   - All contract storage fields (`max_payout_per_claim`, `pool_balance`, `claimed_amount`, `payout_amount`) strictly execute in base units (`bigint` in wei: $1 \text{ GEN} = 10^{18} \text{ base units}$).
+   - Frontend handles conversion from user GEN inputs to base units and formats base units to human-readable GEN strings.
+
+2. **Point 2 — Escrow Reservation & Transfer Failure Rollback**:
+   - `resolve_claim` pre-checks escrow balance before setting `RESOLVED`. If escrow balance is less than `payout_amount`, the claim transitions to `REJECTED_NO_FUNDS`.
+   - `payout_amount` is pre-deducted/reserved from `pool_balance` before initiating `gl.transfer()`.
+   - If transfer fails, reserved escrow balance is rolled back (`pool_balance += payout_amount`) and claim transitions to `PAYOUT_FAILED` without corrupting total payout statistics.
+
+3. **Point 3 — Multi-Validator Agreement on Payable Confidence Branch**:
+   - `validator_fn` enforces consensus on BOTH compliance percentage tolerance ($\pm 5\%$) AND payable branch agreement (`leader_confidence >= 60 == validator_confidence >= 60`).
+   - Prevents validators from accepting verdicts that disagree on execution branch selection (RESOLVED with payout vs DISPUTED without payout).
 
 ---
 

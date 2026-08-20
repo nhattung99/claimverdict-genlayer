@@ -267,16 +267,28 @@ Return ONLY a valid raw JSON object with NO markdown formatting, NO backticks:
             if not isinstance(leader_res, gl.vm.Return):
                 return False
             leader_val_dict = leader_res.calldata
-            if not isinstance(leader_val_dict, dict) or "compliance_pct" not in leader_val_dict:
+            if not isinstance(leader_val_dict, dict) or "compliance_pct" not in leader_val_dict or "confidence" not in leader_val_dict:
                 return False
             try:
                 my_res = leader_fn()
             except Exception:
                 return False
 
-            leader_val = leader_val_dict["compliance_pct"]
-            my_val = my_res["compliance_pct"]
-            return abs(my_val - leader_val) <= 5
+            leader_compliance = int(leader_val_dict["compliance_pct"])
+            leader_confidence = int(leader_val_dict["confidence"])
+            my_compliance = int(my_res["compliance_pct"])
+            my_confidence = int(my_res["confidence"])
+
+            # 1. Compliance score agreement within tolerance ±5
+            compliance_match = abs(my_compliance - leader_compliance) <= 5
+
+            # 2. Confidence branch agreement: Both leader and validator MUST agree on whether confidence >= 60.
+            #    This is critical because confidence >= 60 selects the payable branch (RESOLVED vs DISPUTED).
+            leader_payable = leader_confidence >= 60
+            my_payable = my_confidence >= 60
+            branch_match = (leader_payable == my_payable)
+
+            return compliance_match and branch_match
 
         result = gl.vm.run_nondet(leader_fn, validator_fn)
         result_data = result.calldata if hasattr(result, 'calldata') else result
@@ -294,34 +306,60 @@ Return ONLY a valid raw JSON object with NO markdown formatting, NO backticks:
             self.claims[claim_id] = claim
             return
 
-        claim.status = "RESOLVED"
-
         base_amount = claim.claimed_amount
         if base_amount > pool.max_payout_per_claim:
             base_amount = pool.max_payout_per_claim
 
-        payout = (base_amount * bigint(result["compliance_pct"])) // bigint(100)
+        payout = (base_amount * bigint(result_data["compliance_pct"])) // bigint(100)
         claim.payout_amount = payout
 
-        if payout > bigint(0) and not claim.paid_out:
-            current_pool_bal = self.pool_balances.get(claim.pool_id, bigint(0))
-            if current_pool_bal >= payout:
-                self.pool_balances[claim.pool_id] = current_pool_bal - payout
-                pool.pool_balance -= payout
-                self.pools[claim.pool_id] = pool
+        # Escrow Reservation & Transfer Execution
+        current_pool_bal = self.pool_balances.get(claim.pool_id, bigint(0))
+        if payout > bigint(0):
+            if current_pool_bal < payout:
+                # Escrow balance insufficient: cannot resolve claim or pay out
+                claim.status = "REJECTED_NO_FUNDS"
+                claim.verdict_reason += " (Escrow pool balance insufficient for payout)"
+                claim.paid_out = False
+                self.claims[claim_id] = claim
+                return
 
+            # Pre-reserve/deduct payout from pool escrow balance before transfer
+            self.pool_balances[claim.pool_id] = current_pool_bal - payout
+            pool.pool_balance -= payout
+            self.pools[claim.pool_id] = pool
+
+            try:
+                # Attempt native transfer to claimant
                 gl.get_contract_at(claim.claimant).emit_transfer(value=u256(payout))
                 claim.paid_out = True
+                claim.status = "RESOLVED"
+
+                # Update pool payout stats only on successful transfer
+                p_total = self.pool_total_claims.get(claim.pool_id, bigint(0))
+                p_payouts = self.pool_total_payouts.get(claim.pool_id, bigint(0))
+                self.pool_total_claims[claim.pool_id] = p_total + bigint(1)
+                self.pool_total_payouts[claim.pool_id] = p_payouts + payout
+            except Exception as e:
+                # Transfer failed: Rollback reserved escrow balance
+                self.pool_balances[claim.pool_id] = current_pool_bal
+                pool.pool_balance += payout
+                self.pools[claim.pool_id] = pool
+
+                claim.paid_out = False
+                claim.status = "PAYOUT_FAILED"
+                claim.verdict_reason += f" (Payout transfer failed: {str(e)})"
+                self.claims[claim_id] = claim
+                return
+        else:
+            # Payout is 0 (0% compliance score)
+            claim.paid_out = True
+            claim.status = "RESOLVED"
 
         # Update reputation stats
         c_key = _format_address_str(claim.claimant)
         self.claimant_total_claims[c_key] = self.claimant_total_claims.get(c_key, bigint(0)) + bigint(1)
-        self.claimant_sum_compliance[c_key] = self.claimant_sum_compliance.get(c_key, bigint(0)) + bigint(result["compliance_pct"])
-
-        p_total = self.pool_total_claims.get(claim.pool_id, bigint(0))
-        p_payouts = self.pool_total_payouts.get(claim.pool_id, bigint(0))
-        self.pool_total_claims[claim.pool_id] = p_total + bigint(1)
-        self.pool_total_payouts[claim.pool_id] = p_payouts + payout
+        self.claimant_sum_compliance[c_key] = self.claimant_sum_compliance.get(c_key, bigint(0)) + bigint(result_data["compliance_pct"])
 
         self.claims[claim_id] = claim
 

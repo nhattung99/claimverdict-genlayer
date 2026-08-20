@@ -191,3 +191,92 @@ def test_insufficient_pool_funds(direct_vm, direct_deploy, direct_accounts):
 
     claim = court.get_claim(claim_id)
     assert claim["status"] == "REJECTED_NO_FUNDS"
+
+
+def test_escrow_reservation_insufficient_funds_on_resolve(direct_vm, direct_deploy, direct_accounts):
+    operator = direct_accounts[1]
+    claimant = direct_accounts[2]
+
+    court = direct_deploy("contracts/claim_verdict.py")
+
+    direct_vm.sender = operator
+    pool_id = court.create_policy_pool("Flight", ["Flight Cancelled"], 5000)
+
+    # Deposit 500 wei (less than 1000 claimed)
+    direct_vm.value = 500
+    court.deposit_to_pool(pool_id)
+    direct_vm.value = 0
+
+    direct_vm.sender = claimant
+    # Initially pool has 500, but claim submits 100
+    claim_id = court.submit_claim(
+        pool_id,
+        100,
+        "Flight cancelled",
+        ["https://example.com/e.html"],
+        ["https://example.com/r1.html", "https://example.com/r2.html"]
+    )
+    assert court.get_claim(claim_id)["status"] == "SUBMITTED"
+
+    # Manually drain pool balance or test insufficient escrow on resolve
+    # Drain balance to 0
+    court.pool_balances[pool_id] = 0
+    pool = court.pools[pool_id]
+    pool.pool_balance = 0
+    court.pools[pool_id] = pool
+
+    direct_vm.mock_web("https://example.com/e.html", "Cancelled")
+    direct_vm.mock_web("https://example.com/r1.html", "Confirmed Cancelled")
+    direct_vm.mock_web("https://example.com/r2.html", "Confirmed Cancelled")
+    direct_vm.mock_llm(".*", '{"compliance_pct": 100, "confidence": 90, "reason": "Valid claim"}')
+
+    direct_vm.sender = operator
+    court.resolve_claim(claim_id)
+
+    res_claim = court.get_claim(claim_id)
+    # Escrow insufficient on resolve -> status becomes REJECTED_NO_FUNDS, NOT RESOLVED
+    assert res_claim["status"] == "REJECTED_NO_FUNDS"
+    assert res_claim["paid_out"] == False
+
+
+def test_base_units_wei_roundtrip(direct_vm, direct_deploy, direct_accounts):
+    operator = direct_accounts[1]
+    claimant = direct_accounts[2]
+
+    court = direct_deploy("contracts/claim_verdict.py")
+
+    # 10 GEN in base units (wei = 10 * 10^18)
+    ten_gen_wei = 10 * 10**18
+    five_gen_wei = 5 * 10**18
+
+    direct_vm.sender = operator
+    pool_id = court.create_policy_pool("Auto", ["Collision report"], ten_gen_wei)
+
+    direct_vm.value = ten_gen_wei
+    court.deposit_to_pool(pool_id)
+    direct_vm.value = 0
+
+    assert court.get_pool_balance(pool_id) == str(ten_gen_wei)
+
+    direct_vm.sender = claimant
+    claim_id = court.submit_claim(
+        pool_id,
+        five_gen_wei,
+        "Rear-ended at traffic signal",
+        ["https://example.com/damage.html"],
+        ["https://example.com/police.html", "https://example.com/repair.html"]
+    )
+
+    direct_vm.mock_web("https://example.com/damage.html", "Rear bumper damaged")
+    direct_vm.mock_web("https://example.com/police.html", "Accident report #402")
+    direct_vm.mock_web("https://example.com/repair.html", "Estimate 5 GEN")
+    direct_vm.mock_llm(".*", '{"compliance_pct": 100, "confidence": 95, "reason": "Full match"}')
+
+    direct_vm.sender = operator
+    court.resolve_claim(claim_id)
+
+    res_claim = court.get_claim(claim_id)
+    assert res_claim["status"] == "RESOLVED"
+    assert res_claim["payout_amount"] == str(five_gen_wei)
+    assert court.get_pool_balance(pool_id) == str(five_gen_wei)
+
