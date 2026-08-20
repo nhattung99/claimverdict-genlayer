@@ -470,16 +470,18 @@ export default function App() {
     setForm({ ...form, [key]: [...currentArray, ''] });
   };
 
-  // Load Contract State View Methods (Reads strictly from selected courtAddress)
+  // Load Contract State View Methods (Reads strictly from selected courtAddress with RPC rate limit throttling)
   const loadContractData = async () => {
     setIsLoadingContract(true);
     const targetAddr = (courtAddress && courtAddress.trim()) ? courtAddress.trim() : CONTRACT_ADDRESS;
     try {
       const loadedPools = [];
+      let consecutiveEmptyPools = 0;
       for (let i = 1; i <= 10; i++) {
         const pId = String(i);
         const pool = await readContractState('get_pool', [pId], targetAddr);
         if (pool && pool.coverage_type && String(pool.coverage_type).trim() !== '') {
+          consecutiveEmptyPools = 0;
           const bal = await readContractState('get_pool_balance', [pId], targetAddr);
           loadedPools.push({
             id: pId,
@@ -490,15 +492,21 @@ export default function App() {
             active: Boolean(pool.active !== false),
             criteria: Array.isArray(pool.criteria) ? pool.criteria.map(String) : []
           });
+        } else {
+          consecutiveEmptyPools++;
+          if (consecutiveEmptyPools >= 2) break; // Break early if 2 empty slots encountered
         }
+        await new Promise(r => setTimeout(r, 150)); // Throttling delay to avoid RPC 429 rate limit
       }
       setPools(loadedPools);
 
       const loadedClaims = [];
+      let consecutiveEmptyClaims = 0;
       for (let j = 1; j <= 20; j++) {
         const cId = String(j);
         const claim = await readContractState('get_claim', [cId], targetAddr);
         if (claim && claim.pool_id && String(claim.pool_id).trim() !== '') {
+          consecutiveEmptyClaims = 0;
           loadedClaims.push({
             id: cId,
             pool_id: String(claim.pool_id),
@@ -514,7 +522,11 @@ export default function App() {
             verdict_reason: String(claim.verdict_reason || ''),
             paid_out: Boolean(claim.paid_out)
           });
+        } else {
+          consecutiveEmptyClaims++;
+          if (consecutiveEmptyClaims >= 2) break; // Break early if 2 empty slots encountered
         }
+        await new Promise(r => setTimeout(r, 150)); // Throttling delay to avoid RPC 429 rate limit
       }
       setClaims(loadedClaims);
     } catch (err) {

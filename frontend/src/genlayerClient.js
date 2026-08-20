@@ -27,31 +27,37 @@ export const getGenlayerClient = () => {
 };
 
 // Base-Unit (Wei) Converter Helpers: 1 GEN = 10^18 base units (wei)
+const WEI_PER_GEN = 1000000000000000000n; // 10^18
+
 export const parseGenToWei = (genAmountStr) => {
   if (!genAmountStr) return 0n;
-  try {
-    const num = parseFloat(genAmountStr);
-    if (isNaN(num) || num <= 0) return 0n;
-    return BigInt(Math.floor(num * 1e18));
-  } catch (err) {
-    return 0n;
-  }
+  const str = String(genAmountStr).trim();
+  if (!/^\d+(\.\d+)?$/.test(str)) return 0n;
+
+  const [intPart, fracPartRaw = ""] = str.split(".");
+  const fracPart = (fracPartRaw + "0".repeat(18)).slice(0, 18);
+  const weiStr = intPart + fracPart;
+  const wei = BigInt(weiStr);
+  return wei > 0n ? wei : 0n;
 };
 
 export const formatWeiToGen = (val) => {
   if (val === null || val === undefined || val === '') return '0';
+  let wei;
   try {
-    const b = BigInt(val);
-    if (b === 0n) return '0';
-    if (b >= 100000000000000n) {
-      const genFloat = Number(b) / 1e18;
-      if (Number.isInteger(genFloat)) return String(genFloat);
-      return genFloat.toFixed(4).replace(/\.?0+$/, '');
-    }
-    return String(b);
+    wei = BigInt(val);
   } catch (err) {
     return String(val);
   }
+  if (wei === 0n) return '0';
+
+  const intPart = wei / WEI_PER_GEN;
+  const fracPart = wei % WEI_PER_GEN;
+
+  if (fracPart === 0n) return intPart.toString();
+
+  let fracStr = fracPart.toString().padStart(18, "0").replace(/0+$/, "");
+  return fracStr.length > 0 ? `${intPart.toString()}.${fracStr}` : intPart.toString();
 };
 
 export const switchToGenlayerStudionet = async () => {
