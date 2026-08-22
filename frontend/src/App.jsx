@@ -22,23 +22,26 @@ import {
   Clipboard
 } from 'lucide-react';
 import { 
+  studionet, 
+  CONTRACT_ADDRESS, 
   getGenlayerClient, 
-  switchToGenlayerStudionet, 
+  encodeGenLayerCalldata, 
   sendContractTransaction, 
   waitForFinalizedTx, 
-  readContractState, 
-  CONTRACT_ADDRESS 
+  readContractState,
+  parseGenToWei,
+  formatWeiToGen
 } from './genlayerClient';
 import { SAMPLE_CLAIM_DATA } from './data/sampleClaimData';
 
-// Initial Mock Pools & Claims for unconfigured / fallback mode
+// Initial Mock Pools & Claims for unconfigured / fallback mode (stored in wei base units)
 const INITIAL_DEMO_POOLS = [
   {
     id: "0",
     coverage_type: "Flight Cancellation & Delay",
     operator: "0x8920...f4a1",
-    max_payout_per_claim: "1000",
-    pool_balance: "15000",
+    max_payout_per_claim: "1000000000000000000000", // 1000 GEN
+    pool_balance: "15000000000000000000000",        // 15000 GEN
     active: true,
     criteria: [
       "Official flight status confirmed CANCELLED or delayed > 4 hours by airline",
@@ -50,8 +53,8 @@ const INITIAL_DEMO_POOLS = [
     id: "1",
     coverage_type: "Amateur Sports Injury Reimbursement",
     operator: "0x3b1c...99d2",
-    max_payout_per_claim: "2500",
-    pool_balance: "30000",
+    max_payout_per_claim: "2500000000000000000000", // 2500 GEN
+    pool_balance: "30000000000000000000000",        // 30000 GEN
     active: true,
     criteria: [
       "Incident occurred during registered amateur sporting competition",
@@ -66,7 +69,7 @@ const INITIAL_DEMO_CLAIMS = [
     id: "0",
     pool_id: "0",
     claimant: "0x71C705E3B56E5C2f5e4129F7a26a56304288b172",
-    claimed_amount: "800",
+    claimed_amount: "800000000000000000000",  // 800 GEN
     incident_description: "Flight VN123 from SGN to HAN cancelled due to severe tropical storm warning.",
     evidence_urls: ["https://example.com/ticket_vn123.pdf"],
     reference_urls: [
@@ -76,7 +79,7 @@ const INITIAL_DEMO_CLAIMS = [
     status: "RESOLVED",
     compliance_pct: 100,
     confidence: 95,
-    payout_amount: "800",
+    payout_amount: "800000000000000000000",   // 800 GEN
     verdict_reason: "Flight cancellation confirmed by flightstats.com and storm alert confirmed by national weather bureau. All criteria satisfied.",
     paid_out: true
   },
@@ -84,7 +87,7 @@ const INITIAL_DEMO_CLAIMS = [
     id: "1",
     pool_id: "1",
     claimant: "0x5A38...e112",
-    claimed_amount: "1200",
+    claimed_amount: "1200000000000000000000", // 1200 GEN
     incident_description: "Ankle sprain during amateur marathon, treated at City Hospital.",
     evidence_urls: ["https://example.com/hospital_receipt.pdf"],
     reference_urls: [
@@ -554,12 +557,12 @@ export default function App() {
     }
 
     const maxPayoutVal = newPool.max_payout || selectedCategory.default_max_payout;
-    if (!maxPayoutVal || parseFloat(maxPayoutVal) <= 0) {
+    const maxPayoutWei = parseGenToWei(maxPayoutVal);
+    if (maxPayoutWei <= 0n) {
       alert("Please specify a valid Max Payout per Claim (> 0 GEN).");
       return;
     }
 
-    const maxPayoutNum = Math.floor(parseFloat(maxPayoutVal));
     setTxMessage({
       status: 'pending',
       title: 'Phase 1/3: Submitting Deploy Policy Pool to MetaMask...',
@@ -571,7 +574,7 @@ export default function App() {
         from: account,
         to: courtAddress || CONTRACT_ADDRESS,
         functionName: 'create_policy_pool',
-        args: [selectedCategory.coverage_type, allCriteria, maxPayoutNum]
+        args: [selectedCategory.coverage_type, allCriteria, maxPayoutWei]
       });
 
       if (!txHash) {
@@ -621,10 +624,14 @@ export default function App() {
   // Handle Deposit to Pool - On-Chain Finalized Execution
   const handleDepositSubmit = async (e) => {
     e.preventDefault();
-    if (!depositAmount || parseFloat(depositAmount) <= 0) return;
+    const depositWei = parseGenToWei(depositAmount);
+    if (depositWei <= 0n) {
+      alert("Please enter a valid deposit amount (> 0 GEN).");
+      return;
+    }
 
     const poolIdStr = String(selectedPoolForDeposit?.id || '1');
-    const depositWeiHex = '0x' + BigInt(Math.floor(parseFloat(depositAmount) * 1e18)).toString(16);
+    const depositWeiHex = '0x' + depositWei.toString(16);
 
     setTxMessage({
       status: 'pending',
@@ -714,8 +721,13 @@ export default function App() {
       finalDesc += ` (Note: ${newClaim.description.trim()})`;
     }
 
-    const claimedVal = newClaim.amount || String(Math.round(parseFloat(targetPool.max_payout_per_claim) * 0.5));
-    const claimedNum = Math.floor(parseFloat(claimedVal));
+    const defaultGenCap = formatWeiToGen(targetPool?.max_payout_per_claim || '1000000000000000000000');
+    const claimedVal = newClaim.amount || String(Math.round(parseFloat(defaultGenCap) * 0.5));
+    const claimedWei = parseGenToWei(claimedVal);
+    if (claimedWei <= 0n) {
+      alert("Please enter a valid claim amount (> 0 GEN).");
+      return;
+    }
 
     setTxMessage({
       status: 'pending',
@@ -730,7 +742,7 @@ export default function App() {
         functionName: 'submit_claim',
         args: [
           String(newClaim.pool_id || '1'),
-          claimedNum,
+          claimedWei,
           finalDesc,
           validEvidence,
           validReference
@@ -1157,11 +1169,11 @@ export default function App() {
                   <div className="pool-stats">
                     <div>
                       <div className="stat-label">Pool Fund Balance</div>
-                      <div className="stat-value text-cyan">{pool.pool_balance} GEN</div>
+                      <div className="stat-value text-cyan">{formatWeiToGen(pool.pool_balance)} GEN</div>
                     </div>
                     <div>
                       <div className="stat-label">Max Payout / Claim</div>
-                      <div className="stat-value">{pool.max_payout_per_claim} GEN</div>
+                      <div className="stat-value">{formatWeiToGen(pool.max_payout_per_claim)} GEN</div>
                     </div>
                   </div>
 
@@ -1259,7 +1271,7 @@ export default function App() {
                     <div style={{ textAlign: 'right' }}>
                       <div className="stat-label">Claimed Amount</div>
                       <div style={{ fontSize: '18px', fontWeight: '700', color: 'var(--accent-cyan)' }}>
-                        {claim.claimed_amount} GEN
+                        {formatWeiToGen(claim.claimed_amount)} GEN
                       </div>
                     </div>
                   </div>
@@ -1282,7 +1294,7 @@ export default function App() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
                       Payout Executed: <strong style={{ color: claim.paid_out ? 'var(--accent-emerald)' : 'var(--text-muted)' }}>
-                        {claim.paid_out ? `${claim.payout_amount} GEN` : '0 GEN'}
+                        {claim.paid_out ? `${formatWeiToGen(claim.payout_amount)} GEN` : '0 GEN'}
                       </strong>
                     </div>
 
@@ -1334,20 +1346,21 @@ export default function App() {
                       key={p.id}
                       className={`pool-select-card ${String(newClaim?.pool_id) === String(p.id) ? 'selected' : ''}`}
                       onClick={() => {
+                        const poolCapGen = formatWeiToGen(p.max_payout_per_claim || '1000000000000000000000');
                         setNewClaim({ 
                           ...newClaim, 
                           pool_id: p.id,
-                          amount: String(Math.round(parseFloat(p.max_payout_per_claim) * 0.5))
+                          amount: String(Math.round(parseFloat(poolCapGen) * 0.5))
                         });
                         setSelectedIncidentRadio(0);
                       }}
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
                         <span className="badge badge-resolved" style={{ fontSize: '10px' }}>POOL #{p.id}</span>
-                        <span style={{ fontSize: '11px', color: 'var(--accent-cyan)', fontWeight: 700 }}>{p.pool_balance} GEN</span>
+                        <span style={{ fontSize: '11px', color: 'var(--accent-cyan)', fontWeight: 700 }}>{formatWeiToGen(p.pool_balance)} GEN</span>
                       </div>
                       <h4 style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-main)', marginBottom: '4px' }}>{p.coverage_type}</h4>
-                      <span style={{ fontSize: '11px', color: 'var(--text-subtle)' }}>Max Payout: {p.max_payout_per_claim} GEN</span>
+                      <span style={{ fontSize: '11px', color: 'var(--text-subtle)' }}>Max Payout: {formatWeiToGen(p.max_payout_per_claim)} GEN</span>
                     </div>
                   ))}
                 </div>
@@ -1419,8 +1432,8 @@ export default function App() {
                       <label className="form-label">Claimed Amount (GEN) *</label>
                       <div className="preset-chips-row">
                         {[0.25, 0.5, 0.75, 1.0].map(pct => {
-                          const maxCap = parseFloat(targetPool.max_payout_per_claim || 1000);
-                          const val = String(Math.round(maxCap * pct));
+                          const maxCapGen = parseFloat(formatWeiToGen(targetPool?.max_payout_per_claim || '1000000000000000000000'));
+                          const val = String(Math.round(maxCapGen * pct));
                           return (
                             <button 
                               key={pct}
@@ -1862,11 +1875,11 @@ export default function App() {
                       {val} GEN
                     </button>
                   ))}
-                  {selectedPoolForDeposit.pool_balance && parseFloat(selectedPoolForDeposit.pool_balance) > 0 && (
+                  {parseFloat(formatWeiToGen(selectedPoolForDeposit?.pool_balance || '0')) > 0 && (
                     <button 
                       type="button"
                       className="preset-chip"
-                      onClick={() => setDepositAmount(String(Math.round(parseFloat(selectedPoolForDeposit.pool_balance) * 0.5)))}
+                      onClick={() => setDepositAmount(String(Math.round(parseFloat(formatWeiToGen(selectedPoolForDeposit.pool_balance)) * 0.5)))}
                     >
                       +50% Match
                     </button>
