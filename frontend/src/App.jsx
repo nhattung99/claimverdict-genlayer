@@ -25,6 +25,7 @@ import {
   studionet, 
   CONTRACT_ADDRESS, 
   getGenlayerClient, 
+  switchToGenlayerStudionet,
   encodeGenLayerCalldata, 
   sendContractTransaction, 
   waitForFinalizedTx, 
