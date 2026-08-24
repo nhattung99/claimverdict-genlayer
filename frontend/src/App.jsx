@@ -1162,17 +1162,29 @@ export default function App() {
             </div>
           ) : (
             <div className="grid-2">
-              {pools.map(pool => (
-                <div key={pool.id} className="card pool-card">
-                  <div className="card-header">
-                    <div>
-                      <span style={{ fontSize: '12px', color: 'var(--accent-indigo)', fontWeight: '700' }}>
-                        POOL #{pool.id}
-                      </span>
-                      <h3 className="card-title">{pool.coverage_type}</h3>
+              {pools.map(pool => {
+                let isLegacyCorrupted = false;
+                try {
+                  if (BigInt(pool.max_payout_per_claim || '0') < 100000000000000n) {
+                    isLegacyCorrupted = true;
+                  }
+                } catch (e) {}
+
+                return (
+                  <div key={pool.id} className="card pool-card" style={{ opacity: isLegacyCorrupted ? 0.75 : 1 }}>
+                    <div className="card-header">
+                      <div>
+                        <span style={{ fontSize: '12px', color: 'var(--accent-indigo)', fontWeight: '700' }}>
+                          POOL #{pool.id}
+                        </span>
+                        <h3 className="card-title">{pool.coverage_type}</h3>
+                      </div>
+                      {isLegacyCorrupted ? (
+                        <span className="badge badge-disputed" title="Legacy pool created with un-converted units. Deprecated.">⚠️ Deprecated Test Pool</span>
+                      ) : (
+                        <span className="badge badge-resolved">Active</span>
+                      )}
                     </div>
-                    <span className="badge badge-resolved">Active</span>
-                  </div>
 
                   <div className="pool-stats">
                     <div>
@@ -1222,7 +1234,8 @@ export default function App() {
                     </button>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -1349,28 +1362,39 @@ export default function App() {
               <div className="form-group">
                 <label className="form-label" style={{ marginBottom: '10px' }}>Select Policy Pool *</label>
                 <div className="pool-select-grid">
-                  {pools.map(p => (
-                    <div 
-                      key={p.id}
-                      className={`pool-select-card ${String(newClaim?.pool_id) === String(p.id) ? 'selected' : ''}`}
-                      onClick={() => {
-                        const poolCapGen = formatWeiToGen(p.max_payout_per_claim || '1000000000000000000000');
-                        setNewClaim({ 
-                          ...newClaim, 
-                          pool_id: p.id,
-                          amount: String(Math.round(parseFloat(poolCapGen) * 0.5))
-                        });
-                        setSelectedIncidentRadio(0);
-                      }}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
-                        <span className="badge badge-resolved" style={{ fontSize: '10px' }}>POOL #{p.id}</span>
-                        <span style={{ fontSize: '11px', color: 'var(--accent-cyan)', fontWeight: 700 }}>{formatWeiToGen(p.pool_balance)} GEN</span>
+                  {pools.map(p => {
+                    let isLegacyCorrupted = false;
+                    try {
+                      if (BigInt(p.max_payout_per_claim || '0') < 100000000000000n) {
+                        isLegacyCorrupted = true;
+                      }
+                    } catch (e) {}
+
+                    if (isLegacyCorrupted) return null; // Exclude deprecated legacy test pools from new claim selection grid
+
+                    return (
+                      <div 
+                        key={p.id}
+                        className={`pool-select-card ${String(newClaim?.pool_id) === String(p.id) ? 'selected' : ''}`}
+                        onClick={() => {
+                          const poolCapGen = formatWeiToGen(p.max_payout_per_claim || '1000000000000000000000');
+                          setNewClaim({ 
+                            ...newClaim, 
+                            pool_id: p.id,
+                            amount: String(Math.round(parseFloat(poolCapGen) * 0.5))
+                          });
+                          setSelectedIncidentRadio(0);
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                          <span className="badge badge-resolved" style={{ fontSize: '10px' }}>POOL #{p.id}</span>
+                          <span style={{ fontSize: '11px', color: 'var(--accent-cyan)', fontWeight: 700 }}>{formatWeiToGen(p.pool_balance)} GEN</span>
+                        </div>
+                        <h4 style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-main)', marginBottom: '4px' }}>{p.coverage_type}</h4>
+                        <span style={{ fontSize: '11px', color: 'var(--text-subtle)' }}>Max Payout: {formatWeiToGen(p.max_payout_per_claim)} GEN</span>
                       </div>
-                      <h4 style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-main)', marginBottom: '4px' }}>{p.coverage_type}</h4>
-                      <span style={{ fontSize: '11px', color: 'var(--text-subtle)' }}>Max Payout: {formatWeiToGen(p.max_payout_per_claim)} GEN</span>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 
