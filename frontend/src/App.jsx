@@ -34,6 +34,7 @@ import {
   formatWeiToGen
 } from './genlayerClient';
 import { SAMPLE_CLAIM_DATA } from './data/sampleClaimData';
+import { isDeprecatedPool } from './data/deprecatedPools';
 
 // Initial Mock Pools & Claims for unconfigured / fallback mode (stored in wei base units)
 const INITIAL_DEMO_POOLS = [
@@ -1163,12 +1164,7 @@ export default function App() {
           ) : (
             <div className="grid-2">
               {pools.map(pool => {
-                let isLegacyCorrupted = false;
-                try {
-                  if (BigInt(pool.max_payout_per_claim || '0') < 100000000000000n) {
-                    isLegacyCorrupted = true;
-                  }
-                } catch (e) {}
+                const isLegacyCorrupted = isDeprecatedPool(pool.id);
 
                 return (
                   <div key={pool.id} className="card pool-card" style={{ opacity: isLegacyCorrupted ? 0.75 : 1 }}>
@@ -1363,14 +1359,7 @@ export default function App() {
                 <label className="form-label" style={{ marginBottom: '10px' }}>Select Policy Pool *</label>
                 <div className="pool-select-grid">
                   {pools.map(p => {
-                    let isLegacyCorrupted = false;
-                    try {
-                      if (BigInt(p.max_payout_per_claim || '0') < 100000000000000n) {
-                        isLegacyCorrupted = true;
-                      }
-                    } catch (e) {}
-
-                    if (isLegacyCorrupted) return null; // Exclude deprecated legacy test pools from new claim selection grid
+                    if (isDeprecatedPool(p.id)) return null; // Exclude deprecated legacy test pools from new claim selection grid
 
                     return (
                       <div 
