@@ -51,6 +51,12 @@ export const formatWeiToGen = (val) => {
   }
   if (wei === 0n) return '0';
 
+  // Legacy test record safeguard: If wei is raw GEN integer range (e.g. 100 to 1,000,000 GEN),
+  // return raw integer string to avoid formatting as 0.000000000000001 GEN or rounding preset chips to 0 GEN.
+  if (wei >= 100n && wei <= 1000000n) {
+    return wei.toString();
+  }
+
   const intPart = wei / WEI_PER_GEN;
   const fracPart = wei % WEI_PER_GEN;
 

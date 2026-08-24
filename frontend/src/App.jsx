@@ -363,8 +363,15 @@ export default function App() {
 
   const handleApplySample = (sampleSet) => {
     if (!sampleSet) return;
+    const targetPool = (pools && pools.length > 0)
+      ? (pools.find(p => String(p.id) === String(newClaim.pool_id)) || pools[0])
+      : null;
+    const poolCapGen = formatWeiToGen(targetPool?.max_payout_per_claim || '1000000000000000000000');
+    const defaultAmount = sampleSet.claimedAmount || String(Math.round(parseFloat(poolCapGen) * 0.5));
+
     setNewClaim(prev => ({
       ...prev,
+      amount: defaultAmount,
       evidence_urls: [...(sampleSet.evidenceUrls || [''])],
       reference_urls: [...(sampleSet.referenceUrls || ['', ''])]
     }));
@@ -1370,8 +1377,8 @@ export default function App() {
               {/* Incident Scenario Radio Options */}
               {(() => {
                 const targetPool = (pools && pools.length > 0)
-                  ? (pools.find(p => p.id === newClaim.pool_id) || pools[0])
-                  : { id: '0', coverage_type: 'Flight Cancellation & Delay', max_payout_per_claim: '1000', pool_balance: '15000' };
+                  ? (pools.find(p => String(p.id) === String(newClaim.pool_id)) || pools[0])
+                  : { id: '0', coverage_type: 'Flight Cancellation & Delay', max_payout_per_claim: '1000000000000000000000', pool_balance: '15000000000000000000000' };
                 const coverageType = targetPool?.coverage_type || 'Flight Cancellation & Delay';
                 const scenarios = PRESET_INCIDENT_SCENARIOS[coverageType] || [
                   "Official incident claim matching policy criteria"
@@ -1440,9 +1447,10 @@ export default function App() {
                               key={pct}
                               type="button"
                               className={`preset-chip ${newClaim.amount === val ? 'active' : ''}`}
+                              disabled={isLoadingContract}
                               onClick={() => setNewClaim({ ...newClaim, amount: val })}
                             >
-                              {pct * 100}% ({val} GEN)
+                              {isLoadingContract ? `${pct * 100}% (...)` : `${pct * 100}% (${val} GEN)`}
                             </button>
                           );
                         })}
