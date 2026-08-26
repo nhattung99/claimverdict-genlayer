@@ -25,14 +25,19 @@ function runUnitConversionTests() {
   console.assert(millionGen === "1000000", `Test 3 Format Failed: got ${millionGen}`);
 
   // Test 4: Round-trip assertions formatWeiToGen(parseGenToWei(x)) === x
-  const testValues = ["1", "0.5", "100.25", "0.000001", "30000"];
+  const testValues = ["1", "0.5", "100.25", "0.000001", "30000", "123.456"];
   for (const val of testValues) {
     const wei = parseGenToWei(val);
     const formatted = formatWeiToGen(wei);
     console.assert(formatted === val, `Round-trip Failed for ${val}: got ${formatted}`);
   }
 
-  console.log("All 4 Precision Unit Conversion Tests Passed 100%!");
+  // Test 5: Steward decimal 123.456 must not be rounded by float math
+  const stewardWei = parseGenToWei("123.456");
+  console.assert(stewardWei === 123456000000000000000n, `Test 5 Failed: expected 123456000000000000000n, got ${stewardWei}`);
+  console.assert(formatWeiToGen(stewardWei) === "123.456", `Test 5 Format Failed: got ${formatWeiToGen(stewardWei)}`);
+
+  console.log("All Precision Unit Conversion Tests Passed 100%!");
 }
 
 runUnitConversionTests();

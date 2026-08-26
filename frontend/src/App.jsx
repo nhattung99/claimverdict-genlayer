@@ -31,7 +31,10 @@ import {
   waitForFinalizedTx, 
   readContractState,
   parseGenToWei,
-  formatWeiToGen
+  formatWeiToGen,
+  sanitizeGenInput,
+  toWeiString,
+  toPercentInt
 } from './genlayerClient';
 import { SAMPLE_CLAIM_DATA } from './data/sampleClaimData';
 import { isDeprecatedPool } from './data/deprecatedPools';
@@ -306,8 +309,6 @@ export default function App() {
   // Config & State
   const [account, setAccount] = useState(null);
   const [courtAddress, setCourtAddress] = useState(import.meta.env.VITE_CONTRACT_ADDRESS || import.meta.env.VITE_CLAIM_COURT_ADDRESS || '0x030838e6829f5fA3CEEf6989c1dd78d2c626BAe3');
-  const [treasuryAddress, setTreasuryAddress] = useState(import.meta.env.VITE_TREASURY_ADDRESS || '');
-  const [reputationAddress, setReputationAddress] = useState(import.meta.env.VITE_REPUTATION_ADDRESS || '');
 
   const [activeTab, setActiveTab] = useState('pools'); // 'pools' | 'claims' | 'submit' | 'disputed'
   const [pools, setPools] = useState([]);
@@ -367,8 +368,9 @@ export default function App() {
     const targetPool = (pools && pools.length > 0)
       ? (pools.find(p => String(p.id) === String(newClaim.pool_id)) || pools[0])
       : null;
-    const poolCapGen = formatWeiToGen(targetPool?.max_payout_per_claim || '1000000000000000000000');
-    const defaultAmount = sampleSet.claimedAmount || String(Math.round(parseFloat(poolCapGen) * 0.5));
+    const maxCapWei = BigInt(targetPool?.max_payout_per_claim || '1000000000000000000000');
+    const halfCapWei = maxCapWei / 2n;
+    const defaultAmount = sampleSet.claimedAmount || formatWeiToGen(halfCapWei);
 
     setNewClaim(prev => ({
       ...prev,
@@ -499,8 +501,8 @@ export default function App() {
             id: pId,
             coverage_type: String(pool.coverage_type),
             operator: String(pool.operator || '0xOperator'),
-            max_payout_per_claim: String(pool.max_payout_per_claim || '1000'),
-            pool_balance: String(bal || pool.pool_balance || '0'),
+            max_payout_per_claim: toWeiString(pool.max_payout_per_claim),
+            pool_balance: toWeiString(bal || pool.pool_balance),
             active: Boolean(pool.active !== false),
             criteria: Array.isArray(pool.criteria) ? pool.criteria.map(String) : []
           });
@@ -523,14 +525,14 @@ export default function App() {
             id: cId,
             pool_id: String(claim.pool_id),
             claimant: String(claim.claimant || '0xClaimant'),
-            claimed_amount: String(claim.claimed_amount || '0'),
+            claimed_amount: toWeiString(claim.claimed_amount),
             incident_description: String(claim.incident_description || ''),
             evidence_urls: Array.isArray(claim.evidence_urls) ? claim.evidence_urls.map(String) : [],
             reference_urls: Array.isArray(claim.reference_urls) ? claim.reference_urls.map(String) : [],
             status: String(claim.status || 'SUBMITTED'),
-            compliance_pct: Number(claim.compliance_pct || 0),
-            confidence: Number(claim.confidence || 0),
-            payout_amount: String(claim.payout_amount || '0'),
+            compliance_pct: toPercentInt(claim.compliance_pct),
+            confidence: toPercentInt(claim.confidence),
+            payout_amount: toWeiString(claim.payout_amount),
             verdict_reason: String(claim.verdict_reason || ''),
             paid_out: Boolean(claim.paid_out)
           });
@@ -719,7 +721,7 @@ export default function App() {
 
     const targetPool = (pools && pools.length > 0)
       ? (pools.find(p => String(p.id) === String(newClaim?.pool_id)) || pools[0])
-      : { id: '1', coverage_type: 'Flight Cancellation & Delay', max_payout_per_claim: '1000' };
+      : { id: '1', coverage_type: 'Flight Cancellation & Delay', max_payout_per_claim: '1000000000000000000000' };
 
     const scenarios = PRESET_INCIDENT_SCENARIOS[targetPool.coverage_type] || [
       "Official incident claim matching pool eligibility criteria"
@@ -730,9 +732,8 @@ export default function App() {
       finalDesc += ` (Note: ${newClaim.description.trim()})`;
     }
 
-    const defaultGenCap = formatWeiToGen(targetPool?.max_payout_per_claim || '1000000000000000000000');
-    const claimedVal = newClaim.amount || String(Math.round(parseFloat(defaultGenCap) * 0.5));
-    const claimedWei = parseGenToWei(claimedVal);
+    const maxCapWei = BigInt(targetPool?.max_payout_per_claim || '1000000000000000000000');
+    const claimedWei = newClaim.amount ? parseGenToWei(newClaim.amount) : (maxCapWei / 2n);
     if (claimedWei <= 0n) {
       alert("Please enter a valid claim amount (> 0 GEN).");
       return;
@@ -852,9 +853,9 @@ export default function App() {
             return {
               ...c,
               status: String(updatedClaimData.status),
-              compliance_pct: Number(updatedClaimData.compliance_pct || 0),
-              confidence: Number(updatedClaimData.confidence || 0),
-              payout_amount: String(updatedClaimData.payout_amount || '0'),
+              compliance_pct: toPercentInt(updatedClaimData.compliance_pct),
+              confidence: toPercentInt(updatedClaimData.confidence),
+              payout_amount: toWeiString(updatedClaimData.payout_amount),
               verdict_reason: String(updatedClaimData.verdict_reason || ''),
               paid_out: Boolean(updatedClaimData.paid_out)
             };
@@ -1366,11 +1367,12 @@ export default function App() {
                         key={p.id}
                         className={`pool-select-card ${String(newClaim?.pool_id) === String(p.id) ? 'selected' : ''}`}
                         onClick={() => {
-                          const poolCapGen = formatWeiToGen(p.max_payout_per_claim || '1000000000000000000000');
+                          const capWei = BigInt(p.max_payout_per_claim || '1000000000000000000000');
+                          const halfWei = capWei / 2n;
                           setNewClaim({ 
                             ...newClaim, 
                             pool_id: p.id,
-                            amount: String(Math.round(parseFloat(poolCapGen) * 0.5))
+                            amount: formatWeiToGen(halfWei)
                           });
                           setSelectedIncidentRadio(0);
                         }}
@@ -1452,30 +1454,38 @@ export default function App() {
                     <div className="form-group">
                       <label className="form-label">Claimed Amount (GEN) *</label>
                       <div className="preset-chips-row">
-                        {[0.25, 0.5, 0.75, 1.0].map(pct => {
-                          const maxCapGen = parseFloat(formatWeiToGen(targetPool?.max_payout_per_claim || '1000000000000000000000'));
-                          const val = String(Math.round(maxCapGen * pct));
+                        {[25, 50, 75, 100].map(pctInt => {
+                          const maxCapWei = BigInt(targetPool?.max_payout_per_claim || '1000000000000000000000');
+                          const valWei = (maxCapWei * BigInt(pctInt)) / 100n;
+                          const val = formatWeiToGen(valWei);
                           return (
                             <button 
-                              key={pct}
+                              key={pctInt}
                               type="button"
                               className={`preset-chip ${newClaim.amount === val ? 'active' : ''}`}
                               disabled={isLoadingContract}
                               onClick={() => setNewClaim({ ...newClaim, amount: val })}
                             >
-                              {isLoadingContract ? `${pct * 100}% (...)` : `${pct * 100}% (${val} GEN)`}
+                              {isLoadingContract ? `${pctInt}% (...)` : `${pctInt}% (${val} GEN)`}
                             </button>
                           );
                         })}
                       </div>
                       <input 
-                        type="number"
-                        placeholder="Enter custom claimed amount"
+                        type="text"
+                        inputMode="decimal"
+                        autoComplete="off"
+                        placeholder="Enter custom claimed amount (e.g. 123.456)"
                         className="form-input"
                         value={newClaim.amount}
-                        onChange={e => setNewClaim({ ...newClaim, amount: e.target.value })}
+                        onChange={e => setNewClaim({ ...newClaim, amount: sanitizeGenInput(e.target.value) })}
                         required
                       />
+                      {newClaim.amount ? (
+                        <div data-testid="claim-amount-roundtrip" style={{ fontSize: '12px', color: 'var(--accent-cyan)', marginTop: '8px', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>
+                          Exact: {parseGenToWei(newClaim.amount).toString()} wei → displays {formatWeiToGen(parseGenToWei(newClaim.amount))} GEN
+                        </div>
+                      ) : null}
                     </div>
 
                     {/* Sample Data Helper Row */}
@@ -1784,11 +1794,13 @@ export default function App() {
                     ))}
                   </div>
                   <input 
-                    type="number" 
+                    type="text"
+                    inputMode="decimal"
+                    autoComplete="off"
                     placeholder="Enter custom max payout per claim" 
                     className="form-input"
                     value={newPool.max_payout}
-                    onChange={e => setNewPool({ ...newPool, max_payout: e.target.value })}
+                    onChange={e => setNewPool({ ...newPool, max_payout: sanitizeGenInput(e.target.value) })}
                     required
                   />
                 </div>
@@ -1808,11 +1820,13 @@ export default function App() {
                     ))}
                   </div>
                   <input 
-                    type="number" 
+                    type="text"
+                    inputMode="decimal"
+                    autoComplete="off"
                     placeholder="Enter initial pool deposit amount" 
                     className="form-input"
                     value={initialDepositAmount}
-                    onChange={e => setInitialDepositAmount(e.target.value)}
+                    onChange={e => setInitialDepositAmount(sanitizeGenInput(e.target.value))}
                     required
                   />
                 </div>
@@ -1897,34 +1911,44 @@ export default function App() {
                       {val} GEN
                     </button>
                   ))}
-                  {parseFloat(formatWeiToGen(selectedPoolForDeposit?.pool_balance || '0')) > 0 && (
+                  {BigInt(selectedPoolForDeposit?.pool_balance || '0') > 0n && (
                     <button 
                       type="button"
                       className="preset-chip"
-                      onClick={() => setDepositAmount(String(Math.round(parseFloat(formatWeiToGen(selectedPoolForDeposit.pool_balance)) * 0.5)))}
+                      onClick={() => {
+                        const poolBalWei = BigInt(selectedPoolForDeposit.pool_balance || '0');
+                        setDepositAmount(formatWeiToGen(poolBalWei / 2n));
+                      }}
                     >
                       +50% Match
                     </button>
                   )}
                 </div>
                 <input 
-                  type="number" 
-                  placeholder="Enter custom deposit amount" 
+                  type="text"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  placeholder="Enter custom deposit amount (e.g. 123.456)" 
                   className="form-input"
                   value={depositAmount}
-                  onChange={e => setDepositAmount(e.target.value)}
+                  onChange={e => setDepositAmount(sanitizeGenInput(e.target.value))}
                   required
                 />
+                {depositAmount ? (
+                  <div data-testid="deposit-amount-roundtrip" style={{ fontSize: '12px', color: 'var(--accent-cyan)', marginTop: '8px', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>
+                    Exact: {parseGenToWei(depositAmount).toString()} wei → displays {formatWeiToGen(parseGenToWei(depositAmount))} GEN
+                  </div>
+                ) : null}
               </div>
 
               <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '16px' }}>
-                Native GEN will be deposited directly into the <strong>Treasury Intelligent Contract</strong> for Pool #{selectedPoolForDeposit.id}.
+                Native GEN will be deposited directly into the consolidated ClaimVerdict contract for Pool #{selectedPoolForDeposit.id}.
               </p>
 
               <FreeGasNotice style={{ marginBottom: '16px' }} />
 
               <button type="submit" className="btn btn-cyan" style={{ width: '100%' }}>
-                Deposit GEN to Treasury
+                Deposit GEN to Pool
               </button>
             </form>
           </div>

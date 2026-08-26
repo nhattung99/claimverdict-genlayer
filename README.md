@@ -21,12 +21,14 @@ ClaimVerdict is an autonomous insurance claim adjudication dApp built on **GenLa
 
 The entire protocol is consolidated into 1 single Intelligent Contract:
 
-- **[`contracts/claim_verdict.py`](file:///c:/DEV%20Panda/ClaimVerdict/contracts/claim_verdict.py)** (`ClaimVerdict`):
+- **[`contracts/claim_verdict.py`](contracts/claim_verdict.py)** (`ClaimVerdict`) is the **only** deployed contract source:
   - **Policy Pool Escrow**: Manages policy pool creation and native GEN deposits (`gl.message.value`).
   - **Claim Registry**: Stores claim submissions with evidence and independent reference URLs.
   - **AI Consensus Adjudication**: Executes `gl.vm.run_nondet(leader_fn, validator_fn)` to evaluate evidence against independent sources.
   - **Native GEN Payout**: Executes `gl.get_contract_at(claimant).emit_transfer(value=u256(payout))` directly to claimants.
   - **Reputation Tracking**: Calculates claimant compliance history and pool payout statistics.
+
+Legacy pre-consolidation sources (`claim_court.py`, `treasury.py`, `reputation.py`) live under [`archive/`](archive/) and are **not** deployed. They lack `retry_resolution` and the Point 2/3 escrow/consensus fixes.
 
 ---
 
@@ -92,7 +94,7 @@ tests\test_claim_court.py ....                                          [100%]
 ## 🚀 GenLayer Studio Deployment Guide
 
 1. Open **GenLayer Studio** $\rightarrow$ **Run & Debug** panel.
-2. Open [`contracts/claim_verdict.py`](file:///c:/DEV%20Panda/ClaimVerdict/contracts/claim_verdict.py).
+2. Open [`contracts/claim_verdict.py`](contracts/claim_verdict.py).
 3. Click **Deploy**.
 4. Confirm `Result: SUCCESS` and copy the deployed contract address.
 5. Paste the address into `frontend/.env`:

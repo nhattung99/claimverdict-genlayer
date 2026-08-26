@@ -43,11 +43,12 @@ export const parseGenToWei = (genAmountStr) => {
 
 export const formatWeiToGen = (val) => {
   if (val === null || val === undefined || val === '') return '0';
+  if (typeof val === 'number') return '0';
   let wei;
   try {
     wei = BigInt(val);
   } catch (err) {
-    return String(val);
+    return '0';
   }
   if (wei === 0n) return '0';
 
@@ -58,6 +59,50 @@ export const formatWeiToGen = (val) => {
 
   let fracStr = fracPart.toString().padStart(18, "0").replace(/0+$/, "");
   return fracStr.length > 0 ? `${intPart.toString()}.${fracStr}` : intPart.toString();
+};
+
+// Keep user GEN input as a decimal string. Never coerce through IEEE-754 numbers.
+export const sanitizeGenInput = (raw) => {
+  const str = String(raw ?? '');
+  let out = '';
+  let seenDot = false;
+  let fracCount = 0;
+  for (const ch of str) {
+    if (ch >= '0' && ch <= '9') {
+      if (seenDot) {
+        if (fracCount >= 18) continue;
+        fracCount += 1;
+      }
+      out += ch;
+    } else if (ch === '.' && !seenDot) {
+      seenDot = true;
+      out += ch;
+    }
+  }
+  return out;
+};
+
+// Contract money fields must stay integer strings (wei). JS Number cannot hold 10^18 values.
+export const toWeiString = (val) => {
+  if (val === null || val === undefined || val === '') return '0';
+  if (typeof val === 'bigint') return val.toString();
+  if (typeof val === 'number') return '0';
+  const str = String(val).trim();
+  if (!/^\d+$/.test(str)) return '0';
+  return str;
+};
+
+// AI scores are 0-100 integers, not money. Safe to expose as a JS number in that range only.
+export const toPercentInt = (val) => {
+  if (val === null || val === undefined || val === '') return 0;
+  try {
+    const asInt = typeof val === 'bigint' ? val : BigInt(String(val).split('.')[0] || '0');
+    if (asInt < 0n) return 0;
+    if (asInt > 100n) return 100;
+    return Number(asInt);
+  } catch {
+    return 0;
+  }
 };
 
 export const switchToGenlayerStudionet = async () => {
