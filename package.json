@@ -1,0 +1,7 @@
+{
+  "name": "claimverdict-genlayer-root",
+  "private": true,
+  "scripts": {
+    "build": "npm run build --prefix frontend"
+  }
+}
