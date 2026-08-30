@@ -1,5 +1,6 @@
 import { createClient } from 'genlayer-js';
 import { studionet as officialStudionet } from 'genlayer-js/chains';
+import { ExecutionResult, TransactionStatus } from 'genlayer-js/types';
 import { toHex, toRlp } from 'viem';
 
 export const studionet = officialStudionet || {
@@ -15,14 +16,31 @@ export const studionet = officialStudionet || {
 
 export const CONTRACT_ADDRESS = '0x4cdF0B6F0E3A1198F15a76e5391FB07b67E041f1';
 
-export const getGenlayerClient = () => {
+export const getGenlayerClient = (account) => {
   try {
-    return createClient({
+    const cfg = {
       chain: officialStudionet || studionet
-    });
+    };
+    if (account) cfg.account = account;
+    if (typeof window !== 'undefined' && window.ethereum) {
+      cfg.provider = window.ethereum;
+    }
+    return createClient(cfg);
   } catch (err) {
     console.warn("GenLayer client initialization fallback:", err);
     return null;
+  }
+};
+
+const toValueBigInt = (value) => {
+  if (typeof value === 'bigint') return value < 0n ? 0n : value;
+  if (typeof value === 'number') return 0n;
+  const raw = String(value || '0x0').trim();
+  if (raw === '' || raw === '0x' || raw === '0x0') return 0n;
+  try {
+    return BigInt(raw);
+  } catch {
+    return 0n;
   }
 };
 
@@ -197,75 +215,65 @@ export const encodeGenLayerCalldata = (method, args = []) => {
   return toRlp([toHex(new Uint8Array(arr))]);
 };
 
-// Execute Write Transaction on GenLayer Contract via MetaMask
+// Execute Write Transaction on GenLayer via genlayer-js + MetaMask
 export const sendContractTransaction = async ({ from, to = CONTRACT_ADDRESS, functionName, args = [], value = '0x0' }) => {
-  await switchToGenlayerStudionet();
-  const calldata = encodeGenLayerCalldata(functionName, args);
-
-  if (typeof window !== 'undefined' && window.ethereum) {
-    const accs = await window.ethereum.request({ method: 'eth_requestAccounts' });
-    const sender = from || (accs && accs[0]);
-    if (!sender) {
-      throw new Error("No connected wallet account found. Please connect MetaMask to execute write actions.");
-    }
-    
-    const txHash = await window.ethereum.request({
-      method: 'eth_sendTransaction',
-      params: [{
-        from: sender,
-        to,
-        data: calldata,
-        value: typeof value === 'bigint' ? '0x' + value.toString(16) : value
-      }]
-    });
-    return txHash;
-  } else {
+  if (typeof window === 'undefined' || !window.ethereum) {
     throw new Error("Signed Web3 Wallet Required: Please connect MetaMask to execute write transactions on GenLayer.");
   }
+
+  const accs = await window.ethereum.request({ method: 'eth_requestAccounts' });
+  const sender = from || (accs && accs[0]);
+  if (!sender) {
+    throw new Error("No connected wallet account found. Please connect MetaMask to execute write actions.");
+  }
+
+  const client = getGenlayerClient(sender);
+  if (!client || !client.writeContract) {
+    throw new Error("GenLayer write client is not available.");
+  }
+  if (typeof client.connect === 'function') {
+    try {
+      await client.connect('studionet');
+    } catch (err) {
+      console.warn("client.connect note:", err);
+      await switchToGenlayerStudionet();
+    }
+  } else {
+    await switchToGenlayerStudionet();
+  }
+
+  return await client.writeContract({
+    account: sender,
+    address: to,
+    functionName,
+    args,
+    value: toValueBigInt(value)
+  });
 };
 
-// Wait for Transaction Finality on GenLayer Network
-export const waitForFinalizedTx = async (txHash, maxRetries = 25, intervalMs = 2500) => {
+// Wait until GenLayer consensus accepts the tx AND the contract method actually ran
+export const waitForFinalizedTx = async (txHash, maxRetries = 40, intervalMs = 2500) => {
   const client = getGenlayerClient();
-  if (client && client.waitForTransactionReceipt) {
-    try {
-      return await client.waitForTransactionReceipt({
-        hash: txHash,
-        status: "FINALIZED",
-        retries: maxRetries,
-        interval: intervalMs
-      });
-    } catch (err) {
-      console.warn("waitForTransactionReceipt note, fallback to RPC polling:", err);
-    }
+  if (!client || !client.waitForTransactionReceipt) {
+    throw new Error("Cannot wait for transaction: GenLayer client is unavailable.");
   }
 
-  for (let i = 0; i < maxRetries; i++) {
-    await new Promise(r => setTimeout(r, intervalMs));
-    try {
-      const res = await fetch('https://studio.genlayer.com/api', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'eth_getTransactionByHash',
-          params: [txHash]
-        })
-      }).then(r => r.json());
+  const receipt = await client.waitForTransactionReceipt({
+    hash: txHash,
+    status: TransactionStatus.ACCEPTED,
+    retries: maxRetries,
+    interval: intervalMs
+  });
 
-      if (res && res.result) {
-        const tx = res.result;
-        const status = tx.status || tx.state;
-        if (status === 'FINALIZED' || status === 'ACCEPTED' || status === '0x1' || tx.blockNumber) {
-          return tx;
-        }
-      }
-    } catch (e) {
-      console.warn("RPC poll error:", e);
-    }
+  const execName = receipt?.txExecutionResultName || receipt?.executionResult || receipt?.txExecutionResult;
+  if (execName === ExecutionResult.FINISHED_WITH_ERROR) {
+    const detail = receipt?.txExecutionError || receipt?.stderr || receipt?.verdict_reason || '';
+    throw new Error("Contract execution failed. State was not changed. " + String(detail));
   }
-  return true;
+  if (execName === ExecutionResult.NOT_VOTED) {
+    throw new Error("Transaction was not fully executed yet. Wait and refresh.");
+  }
+  return receipt;
 };
 
 // Read Contract View Methods (`get_pool`, `get_claim`, `get_pool_balance`) using selected contract address
@@ -277,7 +285,8 @@ export const readContractState = async (functionName, args = [], targetAddress =
       const result = await client.readContract({
         address: addr,
         functionName,
-        args
+        args,
+        stateStatus: 'accepted'
       });
       if (isHexStub(result)) return null;
       return result;

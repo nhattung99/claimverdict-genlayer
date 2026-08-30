@@ -440,7 +440,7 @@ export default function App() {
   const [createStep, setCreateStep] = useState(1);
   const [selectedCategory, setSelectedCategory] = useState(PRESET_CATEGORIES[0]);
   const [selectedCriteriaMap, setSelectedCriteriaMap] = useState({ 0: true, 1: true, 2: true });
-  const [initialDepositAmount, setInitialDepositAmount] = useState(PRESET_CATEGORIES[0].default_initial_deposit);
+  const [initialDepositAmount, setInitialDepositAmount] = useState('10');
   const [customCriterionInput, setCustomCriterionInput] = useState('');
   const [showCustomInput, setShowCustomInput] = useState(false);
   const [customCriteriaList, setCustomCriteriaList] = useState([]);
@@ -563,7 +563,7 @@ export default function App() {
       criteria: cat.criteria_presets,
       max_payout: cat.default_max_payout
     });
-    setInitialDepositAmount(cat.default_initial_deposit);
+    setInitialDepositAmount('10');
   };
 
   // Toggle Criterion Checkbox
@@ -671,10 +671,12 @@ export default function App() {
         await new Promise(r => setTimeout(r, 150)); // Throttling delay to avoid RPC 429 rate limit
       }
       setClaims(loadedClaims);
+      return { pools: loadedPools, claims: loadedClaims };
     } catch (err) {
       console.warn("loadContractData note:", err);
       setPools([]);
       setClaims([]);
+      return { pools: [], claims: [] };
     } finally {
       setIsLoadingContract(false);
     }
@@ -756,18 +758,28 @@ export default function App() {
       setTxMessage({
         status: 'reading',
         hash: txHash,
-        title: 'Phase 3/3: Finalized! Reading pool state directly from GenLayer contract...',
-        detail: 'Fetching get_pool and get_pool_balance from contract view methods.'
+        title: 'Phase 3/3: Accepted! Reading pool state from the contract...',
+        detail: 'Waiting until get_pool returns the new enrolled policy.'
       });
 
-      await loadContractData();
+      let loaded = { pools: [] };
+      for (let attempt = 0; attempt < 8; attempt++) {
+        loaded = await loadContractData();
+        if (loaded.pools.length > 0) break;
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+      if (loaded.pools.length === 0) {
+        throw new Error("Transaction accepted but no pool appeared. Use a smaller initial deposit if the wallet is short on GEN, then retry Create Policy Pool.");
+      }
+
       setShowCreatePoolModal(false);
+      setCreateStep(1);
 
       setTxMessage({
         status: 'success',
         hash: txHash,
         title: 'Policy Pool Created Successfully on GenLayer Contract!',
-        detail: 'State populated 100% directly from contract view methods.'
+        detail: `Pool #${loaded.pools[loaded.pools.length - 1].id} is on-chain. You can now enroll wallets and file claims.`
       });
     } catch (err) {
       console.warn("Create pool error:", err);
@@ -2109,7 +2121,7 @@ export default function App() {
                 <div className="form-group">
                   <label className="form-label">Initial Pool Deposit (GEN) *</label>
                   <div className="preset-chips-row">
-                    {selectedCategory.deposit_presets.map(val => (
+                    {['10', '100', ...selectedCategory.deposit_presets].map(val => (
                       <button 
                         key={val}
                         type="button"
@@ -2130,6 +2142,9 @@ export default function App() {
                     onChange={e => setInitialDepositAmount(sanitizeGenInput(e.target.value))}
                     required
                   />
+                  <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '8px' }}>
+                    Studio wallets usually hold a small GEN balance. Start with 10 GEN so create can succeed, then fund more later.
+                  </p>
                 </div>
 
                 <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
