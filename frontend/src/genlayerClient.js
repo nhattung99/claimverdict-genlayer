@@ -12,7 +12,7 @@ export const studionet = {
   }
 };
 
-export const CONTRACT_ADDRESS = '0x030838e6829f5fA3CEEf6989c1dd78d2c626BAe3';
+export const CONTRACT_ADDRESS = '0x4cdF0B6F0E3A1198F15a76e5391FB07b67E041f1';
 
 export const getGenlayerClient = () => {
   try {

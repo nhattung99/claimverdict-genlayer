@@ -17,6 +17,7 @@ import {
   Award,
   Sparkles,
   Info,
+  UserPlus,
   ChevronRight,
   Send,
   Clipboard
@@ -118,6 +119,11 @@ const PRESET_CATEGORIES = [
     default_initial_deposit: '15000',
     max_payout_presets: ['500', '1000', '2000'],
     deposit_presets: ['5000', '15000', '30000'],
+    allowed_source_hosts: ['transportation.gov', 'federalregister.gov'],
+    authoritative_source_urls: [
+      'https://www.transportation.gov/individuals/aviation-consumer-protection/refunds',
+      'https://www.federalregister.gov/documents/2024/04/26/2024-07177/refunds-and-other-consumer-protections'
+    ],
     criteria_presets: [
       "Official flight status confirmed CANCELLED or delayed > 4 hours by airline",
       "No alternative flight provided within 6 hours of original departure schedule",
@@ -133,6 +139,11 @@ const PRESET_CATEGORIES = [
     default_initial_deposit: '30000',
     max_payout_presets: ['1000', '2500', '5000'],
     deposit_presets: ['10000', '30000', '50000'],
+    allowed_source_hosts: ['cdc.gov', 'who.int'],
+    authoritative_source_urls: [
+      'https://www.cdc.gov/heads-up/data/index.html',
+      'https://www.who.int/news-room/fact-sheets/detail/injuries-and-violence'
+    ],
     criteria_presets: [
       "Incident occurred during registered amateur sporting competition or event",
       "Hospital or urgent care medical evaluation record submitted",
@@ -148,6 +159,11 @@ const PRESET_CATEGORIES = [
     default_initial_deposit: '20000',
     max_payout_presets: ['500', '1500', '3000'],
     deposit_presets: ['5000', '20000', '40000'],
+    allowed_source_hosts: ['weather.gov', 'travel.state.gov'],
+    authoritative_source_urls: [
+      'https://www.weather.gov/',
+      'https://travel.state.gov/en/international-travel/travel-advisories.html'
+    ],
     criteria_presets: [
       "Trip cancelled due to documented personal emergency, illness, or severe weather",
       "Non-refundable travel booking receipts provided",
@@ -163,6 +179,11 @@ const PRESET_CATEGORIES = [
     default_initial_deposit: '50000',
     max_payout_presets: ['2000', '5000', '10000'],
     deposit_presets: ['15000', '50000', '100000'],
+    allowed_source_hosts: ['who.int', 'cdc.gov'],
+    authoritative_source_urls: [
+      'https://www.who.int/travel-advice',
+      'https://www.cdc.gov/travel/index.html'
+    ],
     criteria_presets: [
       "Emergency hospitalization required while traveling outside primary country of residence",
       "Official hospital admission and discharge summary attached",
@@ -178,6 +199,11 @@ const PRESET_CATEGORIES = [
     default_initial_deposit: '10000',
     max_payout_presets: ['300', '800', '1500'],
     deposit_presets: ['3000', '10000', '25000'],
+    allowed_source_hosts: ['transportation.gov', 'iata.org'],
+    authoritative_source_urls: [
+      'https://www.transportation.gov/lost-delayed-or-damaged-baggage',
+      'https://www.iata.org/en/programs/ops-infra/baggage/'
+    ],
     criteria_presets: [
       "Baggage officially reported lost or damaged by carrier with Property Irregularity Report (PIR)",
       "Carrier failure to locate luggage within 24 hours of arrival",
@@ -193,6 +219,11 @@ const PRESET_CATEGORIES = [
     default_initial_deposit: '25000',
     max_payout_presets: ['1000', '2000', '4000'],
     deposit_presets: ['10000', '25000', '50000'],
+    allowed_source_hosts: ['nhtsa.gov', 'ftc.gov'],
+    authoritative_source_urls: [
+      'https://www.nhtsa.gov/',
+      'https://www.ftc.gov/enforcement/refunds'
+    ],
     criteria_presets: [
       "Accidental damage occurred during active rental contract period",
       "Official police accident report or rental agency damage incident log submitted",
@@ -208,6 +239,11 @@ const PRESET_CATEGORIES = [
     default_initial_deposit: '5000',
     max_payout_presets: ['150', '300', '600'],
     deposit_presets: ['2000', '5000', '15000'],
+    allowed_source_hosts: ['federalregister.gov', 'ftc.gov'],
+    authoritative_source_urls: [
+      'https://www.federalregister.gov/documents/2025/01/10/2024-30293/trade-regulation-rule-on-unfair-or-deceptive-fees',
+      'https://www.ftc.gov/news-events/news/press-releases/2024/12/federal-trade-commission-announces-bipartisan-rule-banning-junk-ticket-hotel-fees'
+    ],
     criteria_presets: [
       "Official event cancellation notice issued by organizer or ticketing vendor",
       "No secondary rescheduled event date or venue alternative provided",
@@ -292,6 +328,49 @@ const DISPUTE_REASON_PRESETS = [
   "Submitted updated itemized cost statement"
 ];
 
+const extractHost = (url) => {
+  const raw = String(url || '').trim().toLowerCase();
+  if (!raw.startsWith('http://') && !raw.startsWith('https://')) {
+    throw new Error('Every URL must start with http:// or https://');
+  }
+  const rest = raw.split('://')[1] || '';
+  let host = rest.split('/')[0].split('?')[0].split('#')[0];
+  if (host.startsWith('www.')) host = host.slice(4);
+  if (host.includes(':')) host = host.split(':')[0];
+  if (host.length < 3 || !host.includes('.')) {
+    throw new Error('Invalid URL host: ' + url);
+  }
+  return host;
+};
+
+const hostsOverlap = (a, b) => a === b || a.endsWith('.' + b) || b.endsWith('.' + a);
+
+const hostOnAllowlist = (host, allowed) => {
+  return (allowed || []).some((item) => {
+    let allowedHost = String(item || '').trim().toLowerCase();
+    if (allowedHost.startsWith('www.')) allowedHost = allowedHost.slice(4);
+    return hostsOverlap(host, allowedHost);
+  });
+};
+
+const validateClaimantEvidenceOnly = (evidenceUrls, allowedHosts) => {
+  const allowed = (allowedHosts || []).map(String).filter(Boolean);
+  if (allowed.length < 2) {
+    throw new Error('This policy has no enrolled authoritative sources. Create a new pool with at least 2 distinct source URLs.');
+  }
+  const evHosts = [];
+  for (const url of evidenceUrls) {
+    const host = extractHost(url);
+    if (evHosts.some((existing) => hostsOverlap(host, existing))) {
+      throw new Error('Claimant evidence URLs must be distinct hosts');
+    }
+    if (hostOnAllowlist(host, allowed)) {
+      throw new Error('Claimant evidence cannot share a host with enrolled authoritative sources');
+    }
+    evHosts.push(host);
+  }
+};
+
 // Reusable Free Gas Notice Component
 const FreeGasNotice = ({ style }) => (
   <div className="notice-banner-free" style={style}>
@@ -308,7 +387,7 @@ const FreeGasNotice = ({ style }) => (
 export default function App() {
   // Config & State
   const [account, setAccount] = useState(null);
-  const [courtAddress, setCourtAddress] = useState(import.meta.env.VITE_CONTRACT_ADDRESS || import.meta.env.VITE_CLAIM_COURT_ADDRESS || '0x030838e6829f5fA3CEEf6989c1dd78d2c626BAe3');
+  const [courtAddress, setCourtAddress] = useState(import.meta.env.VITE_CONTRACT_ADDRESS || import.meta.env.VITE_CLAIM_COURT_ADDRESS || '0x4cdF0B6F0E3A1198F15a76e5391FB07b67E041f1');
 
   const [activeTab, setActiveTab] = useState('pools'); // 'pools' | 'claims' | 'submit' | 'disputed'
   const [pools, setPools] = useState([]);
@@ -359,6 +438,7 @@ export default function App() {
   const [additionalEvidence, setAdditionalEvidence] = useState(['']);
   const [additionalReference, setAdditionalReference] = useState(['']);
   const [selectedDisputeReasons, setSelectedDisputeReasons] = useState({ 0: true, 1: true });
+  const [enrollInputs, setEnrollInputs] = useState({});
 
   // Sample Data Popover & Helper State
   const [showSamplePopover, setShowSamplePopover] = useState(false);
@@ -497,6 +577,14 @@ export default function App() {
         if (pool && pool.coverage_type && String(pool.coverage_type).trim() !== '') {
           consecutiveEmptyPools = 0;
           const bal = await readContractState('get_pool_balance', [pId], targetAddr);
+          let enrolled = false;
+          if (account) {
+            try {
+              enrolled = Boolean(await readContractState('is_enrolled', [pId, account], targetAddr));
+            } catch {
+              enrolled = false;
+            }
+          }
           loadedPools.push({
             id: pId,
             coverage_type: String(pool.coverage_type),
@@ -504,7 +592,10 @@ export default function App() {
             max_payout_per_claim: toWeiString(pool.max_payout_per_claim),
             pool_balance: toWeiString(bal || pool.pool_balance),
             active: Boolean(pool.active !== false),
-            criteria: Array.isArray(pool.criteria) ? pool.criteria.map(String) : []
+            criteria: Array.isArray(pool.criteria) ? pool.criteria.map(String) : [],
+            allowed_source_hosts: Array.isArray(pool.allowed_source_hosts) ? pool.allowed_source_hosts.map(String) : [],
+            authoritative_source_urls: Array.isArray(pool.authoritative_source_urls) ? pool.authoritative_source_urls.map(String) : [],
+            enrolled
           });
         } else {
           consecutiveEmptyPools++;
@@ -534,7 +625,8 @@ export default function App() {
             confidence: toPercentInt(claim.confidence),
             payout_amount: toWeiString(claim.payout_amount),
             verdict_reason: String(claim.verdict_reason || ''),
-            paid_out: Boolean(claim.paid_out)
+            paid_out: Boolean(claim.paid_out),
+            authoritative_retrieved: Number(String(claim.authoritative_retrieved || 0))
           });
         } else {
           consecutiveEmptyClaims++;
@@ -554,7 +646,7 @@ export default function App() {
 
   useEffect(() => {
     loadContractData();
-  }, [courtAddress]);
+  }, [courtAddress, account]);
 
   // Handle Create Pool (Template Guided Flow) - On-Chain Finalized Execution
   const handleCreatePoolSubmit = async (e) => {
@@ -574,6 +666,15 @@ export default function App() {
       return;
     }
 
+    const enrolledUrls = selectedCategory.authoritative_source_urls || [];
+    if (enrolledUrls.length < 2) {
+      alert("Policy must enroll at least 2 distinct authoritative source URLs.");
+      return;
+    }
+
+    const depositWei = parseGenToWei(initialDepositAmount);
+    const depositHex = depositWei > 0n ? ('0x' + depositWei.toString(16)) : '0x0';
+
     setTxMessage({
       status: 'pending',
       title: 'Phase 1/3: Submitting Deploy Policy Pool to MetaMask...',
@@ -585,7 +686,8 @@ export default function App() {
         from: account,
         to: courtAddress || CONTRACT_ADDRESS,
         functionName: 'create_policy_pool',
-        args: [selectedCategory.coverage_type, allCriteria, maxPayoutWei]
+        args: [selectedCategory.coverage_type, allCriteria, enrolledUrls, maxPayoutWei],
+        value: depositHex
       });
 
       if (!txHash) {
@@ -704,24 +806,78 @@ export default function App() {
     }
   };
 
+  const handleEnrollPolicyholder = async (pool) => {
+    const holder = String(enrollInputs[pool.id] || account || '').trim();
+    if (!/^0x[a-fA-F0-9]{40}$/.test(holder)) {
+      alert("Enter a valid 0x wallet address to enroll on this policy.");
+      return;
+    }
+    setTxMessage({
+      status: 'pending',
+      title: `Phase 1/3: Enrolling ${holder.slice(0, 8)}... on Pool #${pool.id}`,
+      detail: 'Please confirm enroll_policyholder in MetaMask.'
+    });
+    try {
+      const txHash = await sendContractTransaction({
+        from: account,
+        to: courtAddress || CONTRACT_ADDRESS,
+        functionName: 'enroll_policyholder',
+        args: [String(pool.id), holder]
+      });
+      if (!txHash) throw new Error("Transaction cancelled or rejected by user.");
+      setTxMessage({
+        status: 'processing',
+        hash: txHash,
+        title: 'Phase 2/3: Enrollment submitted. Waiting for finalization...',
+        detail: 'Binding this wallet to the enrolled policy.'
+      });
+      await waitForFinalizedTx(txHash);
+      await loadContractData();
+      setTxMessage({
+        status: 'success',
+        hash: txHash,
+        title: `Wallet enrolled on Pool #${pool.id}`,
+        detail: 'That address can now file a claim bound to this policy.'
+      });
+    } catch (err) {
+      console.warn("Enroll error:", err);
+      setTxMessage({
+        status: 'error',
+        title: err.message.includes('rejected') || err.message.includes('cancelled') || err.message.includes('User rejected')
+          ? 'Transaction Cancelled.'
+          : 'Enrollment Failed: ' + err.message,
+        detail: 'No enrollment changes applied.'
+      });
+    } finally {
+      setTimeout(() => setTxMessage(null), 8000);
+    }
+  };
+
   // Handle Submit Claim - On-Chain Finalized Execution
   const handleSubmitClaim = async (e) => {
     e.preventDefault();
     const validEvidence = newClaim.evidence_urls.filter(u => u.trim() !== '');
-    const validReference = newClaim.reference_urls.filter(u => u.trim() !== '');
 
     if (validEvidence.length < 1) {
       alert("At least 1 evidence URL is required");
-      return;
-    }
-    if (validReference.length < 2) {
-      alert("At least 2 independent reference verification URLs are required");
       return;
     }
 
     const targetPool = (pools && pools.length > 0)
       ? (pools.find(p => String(p.id) === String(newClaim?.pool_id)) || pools[0])
       : { id: '1', coverage_type: 'Flight Cancellation & Delay', max_payout_per_claim: '1000000000000000000000' };
+
+    if (account && targetPool && targetPool.enrolled === false) {
+      alert("Your wallet is not enrolled on this policy pool. Ask the pool operator to enroll your address before filing a claim.");
+      return;
+    }
+
+    try {
+      validateClaimantEvidenceOnly(validEvidence, targetPool.allowed_source_hosts || []);
+    } catch (err) {
+      alert(err.message || String(err));
+      return;
+    }
 
     const scenarios = PRESET_INCIDENT_SCENARIOS[targetPool.coverage_type] || [
       "Official incident claim matching pool eligibility criteria"
@@ -754,8 +910,7 @@ export default function App() {
           String(newClaim.pool_id || '1'),
           claimedWei,
           finalDesc,
-          validEvidence,
-          validReference
+          validEvidence
         ]
       });
 
@@ -857,7 +1012,8 @@ export default function App() {
               confidence: toPercentInt(updatedClaimData.confidence),
               payout_amount: toWeiString(updatedClaimData.payout_amount),
               verdict_reason: String(updatedClaimData.verdict_reason || ''),
-              paid_out: Boolean(updatedClaimData.paid_out)
+              paid_out: Boolean(updatedClaimData.paid_out),
+              authoritative_retrieved: Number(String(updatedClaimData.authoritative_retrieved || 0))
             };
           }
           return c;
@@ -894,10 +1050,20 @@ export default function App() {
     if (!selectedClaimForDetail) return;
 
     const validEv = additionalEvidence.filter(u => u.trim() !== '');
-    const validRef = additionalReference.filter(u => u.trim() !== '');
 
-    if (validEv.length === 0 && validRef.length === 0) {
-      alert("Please provide at least 1 new evidence or reference verification URL.");
+    if (validEv.length === 0) {
+      alert("Please provide at least 1 new claimant evidence URL.");
+      return;
+    }
+
+    const relatedPool = pools.find(p => String(p.id) === String(selectedClaimForDetail.pool_id));
+    try {
+      validateClaimantEvidenceOnly(
+        [...(selectedClaimForDetail.evidence_urls || []), ...validEv],
+        relatedPool?.allowed_source_hosts || []
+      );
+    } catch (err) {
+      alert(err.message || String(err));
       return;
     }
 
@@ -913,7 +1079,7 @@ export default function App() {
         from: account,
         to: courtAddress || CONTRACT_ADDRESS,
         functionName: 'add_evidence',
-        args: [cId, validEv, validRef]
+        args: [cId, validEv]
       });
 
       if (!txHash) {
@@ -1208,6 +1374,44 @@ export default function App() {
                     </ul>
                   </div>
 
+                  <div style={{ marginBottom: '16px' }}>
+                    <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-muted)', marginBottom: '8px' }}>
+                      Enrolled authoritative sources (fetched by the contract, not chosen by claimants):
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '8px' }}>
+                      {(pool.allowed_source_hosts || []).length > 0 ? pool.allowed_source_hosts.map((h) => (
+                        <span key={h} className="badge badge-resolved" style={{ fontSize: '11px' }}>{h}</span>
+                      )) : (
+                        <span style={{ fontSize: '12px', color: 'var(--text-subtle)' }}>No enrolled sources on this pool (legacy). Create a new pool.</span>
+                      )}
+                    </div>
+                    {(pool.authoritative_source_urls || []).map((u) => (
+                      <div key={u} style={{ fontSize: '11px', wordBreak: 'break-all', marginBottom: '4px', color: 'var(--text-muted)' }}>{u}</div>
+                    ))}
+                    <div style={{ fontSize: '12px', color: pool.enrolled ? 'var(--accent-emerald)' : 'var(--accent-rose)', marginBottom: '8px' }}>
+                      {pool.enrolled ? 'Your wallet is enrolled on this policy.' : 'Your wallet is not enrolled — the operator must enroll you before you can file a claim.'}
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      <input
+                        type="text"
+                        className="form-input"
+                        placeholder={account || '0x covered wallet'}
+                        value={enrollInputs[pool.id] || ''}
+                        onChange={(e) => setEnrollInputs((prev) => ({ ...prev, [pool.id]: e.target.value }))}
+                        style={{ flex: 1, fontSize: '12px', padding: '8px 10px' }}
+                      />
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => handleEnrollPolicyholder(pool)}
+                        title="Pool operator only"
+                      >
+                        <UserPlus size={14} />
+                        Enroll
+                      </button>
+                    </div>
+                  </div>
+
                   <div style={{ display: 'flex', gap: '10px' }}>
                     <button 
                       className="btn btn-cyan" 
@@ -1307,6 +1511,9 @@ export default function App() {
 
                   <div style={{ fontSize: '13px', color: 'var(--text-muted)', background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '8px', marginBottom: '14px' }}>
                     <strong>Verdict Summary:</strong> {claim.verdict_reason || 'Pending consensus evaluation'}
+                    <div style={{ marginTop: '8px', fontSize: '12px' }}>
+                      Authoritative sources retrieved: {claim.authoritative_retrieved ?? 0}/2 required for payout
+                    </div>
                   </div>
 
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1383,6 +1590,9 @@ export default function App() {
                         </div>
                         <h4 style={{ fontSize: '13px', fontWeight: 700, color: 'var(--text-main)', marginBottom: '4px' }}>{p.coverage_type}</h4>
                         <span style={{ fontSize: '11px', color: 'var(--text-subtle)' }}>Max Payout: {formatWeiToGen(p.max_payout_per_claim)} GEN</span>
+                        <div style={{ fontSize: '11px', marginTop: '6px', color: p.enrolled ? 'var(--accent-emerald)' : 'var(--accent-rose)' }}>
+                          {p.enrolled ? 'Enrolled' : 'Not enrolled'}
+                        </div>
                       </div>
                     );
                   })}
@@ -1403,10 +1613,29 @@ export default function App() {
                   reference: "Public status verification page, official bulletin link"
                 };
                 const evidenceUrls = newClaim?.evidence_urls || [''];
-                const referenceUrls = newClaim?.reference_urls || ['', ''];
+                const allowedHosts = targetPool?.allowed_source_hosts || [];
 
                 return (
                   <>
+                    <div className="form-group" style={{
+                      padding: '12px 14px',
+                      borderRadius: '10px',
+                      background: targetPool?.enrolled ? 'rgba(16,185,129,0.08)' : 'rgba(244,63,94,0.08)',
+                      border: '1px solid rgba(255,255,255,0.06)'
+                    }}>
+                      <div style={{ fontSize: '13px', fontWeight: 700, marginBottom: '6px' }}>
+                        {targetPool?.enrolled ? 'Wallet enrolled on this policy' : 'Wallet is not enrolled on this policy'}
+                      </div>
+                      <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '8px' }}>
+                        Claims are bound to enrolled wallets. Ask the pool operator to enroll you on the Policy Pools tab if this is red.
+                      </div>
+                      <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                        Required independent hosts:{' '}
+                        {allowedHosts.length > 0 ? allowedHosts.map((h) => (
+                          <span key={h} className="badge badge-resolved" style={{ fontSize: '10px', marginRight: '4px' }}>{h}</span>
+                        )) : 'none on this pool — create a new pool with enrolled sources'}
+                      </div>
+                    </div>
                     <div className="form-group">
                       <label className="form-label" style={{ marginBottom: '10px' }}>Incident Type Scenario *</label>
                       <div className="incident-radio-list">
@@ -1561,39 +1790,22 @@ export default function App() {
                       </button>
                     </div>
 
-                    {/* Reference Verification URLs with Clipboard Paste Button & Contextual Hint */}
                     <div className="form-group">
-                      <label className="form-label">Independent Reference Verification URLs (Min 2 Required) *</label>
-                      {referenceUrls.map((url, idx) => (
-                        <div key={idx} className="url-input-wrapper">
-                          <input 
-                            type="url"
-                            placeholder={idx === 0 ? "https://flightstats.com/status/123" : "https://weather.gov/report/123"}
-                            className="form-input"
-                            value={url}
-                            onChange={e => handleUrlChange(newClaim, setNewClaim, 'reference_urls', idx, e.target.value)}
-                            required={idx < 2}
-                          />
-                          <button 
-                            type="button" 
-                            className="paste-btn"
-                            onClick={() => handlePasteClipboard((pasted) => handleUrlChange(newClaim, setNewClaim, 'reference_urls', idx, pasted))}
-                          >
-                            <Clipboard size={14} /> Paste
-                          </button>
+                      <label className="form-label">Policy-enrolled authoritative sources (read-only — you cannot choose these)</label>
+                      {(targetPool.authoritative_source_urls || []).length > 0 ? (
+                        (targetPool.authoritative_source_urls || []).map((u, idx) => (
+                          <div key={idx} style={{ fontSize: '12px', wordBreak: 'break-all', marginBottom: '6px' }}>
+                            🌐 <a href={u} target="_blank" rel="noreferrer" style={{ color: 'var(--accent-indigo)' }}>{u}</a>
+                          </div>
+                        ))
+                      ) : (
+                        <div style={{ fontSize: '12px', color: 'var(--text-subtle)' }}>
+                          This pool has no enrolled source URLs. Create a new pool after the steward ABI update.
                         </div>
-                      ))}
+                      )}
                       <div className="url-hint">
-                        💡 <strong>Suggested Reference Sources:</strong> {hints.reference}
+                        The contract fetches these enrolled pages on resolve. Payout requires both distinct hosts to retrieve successfully. You only attach claimant evidence (receipts), not these sources.
                       </div>
-                      <button 
-                        type="button" 
-                        className="btn btn-secondary" 
-                        style={{ fontSize: '12px', padding: '4px 10px' }}
-                        onClick={() => addUrlField(newClaim, setNewClaim, 'reference_urls')}
-                      >
-                        + Add Reference Verification URL
-                      </button>
                     </div>
                   </>
                 );
@@ -1701,6 +1913,23 @@ export default function App() {
                       </div>
                     ))}
                   </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label" style={{ marginBottom: '8px' }}>
+                    Enrolled authoritative source URLs (bound to this policy)
+                  </label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '6px' }}>
+                    {(selectedCategory.allowed_source_hosts || []).map((h) => (
+                      <span key={h} className="badge badge-resolved" style={{ fontSize: '11px' }}>{h}</span>
+                    ))}
+                  </div>
+                  {(selectedCategory.authoritative_source_urls || []).map((u) => (
+                    <div key={u} style={{ fontSize: '11px', wordBreak: 'break-all', marginBottom: '4px', color: 'var(--text-muted)' }}>{u}</div>
+                  ))}
+                  <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: 0 }}>
+                    These URLs are written into the pool. Claimants cannot choose or replace them. Payout requires both distinct hosts to be retrieved successfully.
+                  </p>
                 </div>
 
                 <div className="form-group">
@@ -1860,6 +2089,13 @@ export default function App() {
                     <strong style={{ color: 'var(--accent-cyan)' }}>{initialDepositAmount} GEN</strong>
                   </div>
 
+                  <div className="summary-row" style={{ alignItems: 'flex-start' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>Authoritative hosts:</span>
+                    <strong style={{ color: 'var(--text-main)', textAlign: 'right' }}>
+                      {(selectedCategory.allowed_source_hosts || []).join(', ')}
+                    </strong>
+                  </div>
+
                   <div style={{ marginTop: '14px', paddingTop: '12px', borderTop: '1px dashed rgba(255, 255, 255, 0.08)' }}>
                     <span style={{ fontSize: '12px', color: 'var(--text-subtle)', fontWeight: 600 }}>APPLIED ELIGIBILITY CRITERIA:</span>
                     <ul style={{ paddingLeft: '18px', marginTop: '6px', fontSize: '13px', color: 'var(--text-main)' }}>
@@ -1978,12 +2214,15 @@ export default function App() {
             </div>
 
             <div className="form-group">
-              <label className="form-label">Independent Reference Verification Sources:</label>
+              <label className="form-label">Independent Authoritative Reference Sources:</label>
               {selectedClaimForDetail.reference_urls.map((u, i) => (
                 <div key={i} style={{ fontSize: '13px', wordBreak: 'break-all', marginBottom: '4px' }}>
                   🌐 <a href={u} target="_blank" rel="noreferrer" style={{ color: 'var(--accent-indigo)' }}>{u}</a>
                 </div>
               ))}
+              <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '8px' }}>
+                Successfully retrieved enrolled sources: {selectedClaimForDetail.authoritative_retrieved ?? 0} (payout requires 2 distinct hosts)
+              </div>
             </div>
 
             <div className="assessment-box">
@@ -2059,36 +2298,9 @@ export default function App() {
                 ))}
               </div>
 
-              {/* Additional Reference URLs */}
-              <div className="form-group">
-                <label className="form-label">Additional Independent Verification URLs</label>
-                {additionalReference.map((u, idx) => (
-                  <div key={idx} className="url-input-wrapper">
-                    <input 
-                      type="url"
-                      placeholder="https://hospital-registry.org/verify/doc_991"
-                      className="form-input"
-                      value={u}
-                      onChange={e => {
-                        const updated = [...additionalReference];
-                        updated[idx] = e.target.value;
-                        setAdditionalReference(updated);
-                      }}
-                    />
-                    <button 
-                      type="button" 
-                      className="paste-btn"
-                      onClick={() => handlePasteClipboard((pasted) => {
-                        const updated = [...additionalReference];
-                        updated[idx] = pasted;
-                        setAdditionalReference(updated);
-                      })}
-                    >
-                      <Clipboard size={14} /> Paste
-                    </button>
-                  </div>
-                ))}
-              </div>
+              <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '12px' }}>
+                Authoritative sources stay bound to the enrolled policy. You can only attach more claimant evidence.
+              </p>
 
               <FreeGasNotice style={{ marginBottom: '16px' }} />
 

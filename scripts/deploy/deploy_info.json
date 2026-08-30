@@ -1,6 +1,6 @@
 {
   "network": "studionet",
   "contracts": {
-    "ClaimVerdict": ""
+    "ClaimVerdict": "0x4cdF0B6F0E3A1198F15a76e5391FB07b67E041f1"
   }
 }

@@ -1,36 +1,36 @@
-// sampleClaimData.js
-// Preset sample datasets for "File New Claim" test/demo helper — ClaimVerdict.
+// Sample datasets for "File New Claim".
+// Evidence hosts MUST be distinct from the two enrolled authoritative reference hosts.
 
 const CATEGORY_SAMPLES = {
   "Flight Cancellation & Delay": [
     {
       label: "Cancelled Flight Claim — Sample 1",
       evidenceUrls: [
-        "https://www.federalregister.gov/documents/2024/04/26/2024-07177/refunds-and-other-consumer-protections",
+        "https://www.airhelp.com/en/flight-rights-usa/",
       ],
       referenceUrls: [
         "https://www.transportation.gov/individuals/aviation-consumer-protection/refunds",
-        "https://www.transportation.gov/airconsumer/airline-cancellation-delay-dashboard",
+        "https://www.federalregister.gov/documents/2024/04/26/2024-07177/refunds-and-other-consumer-protections",
       ],
     },
     {
       label: "Flight Delay Exceeding 4 Hours — Sample 2",
       evidenceUrls: [
-        "https://www.airhelp.com/en/flight-rights-usa/",
+        "https://www.squaremouth.com/travel-advice/airline-passenger-rights",
       ],
       referenceUrls: [
-        "https://www.transportation.gov/individuals/aviation-consumer-protection/refunds",
         "https://www.transportation.gov/airconsumer/airline-cancellation-delay-dashboard",
+        "https://www.federalregister.gov/documents/2024/04/26/2024-07177/refunds-and-other-consumer-protections",
       ],
     },
     {
       label: "No Alternative Carrier Connection — Sample 3",
       evidenceUrls: [
-        "https://www.squaremouth.com/travel-advice/airline-passenger-rights",
+        "https://www.airhelp.com/en/flight-delay-compensation/",
       ],
       referenceUrls: [
         "https://www.transportation.gov/individuals/aviation-consumer-protection/refunds",
-        "https://www.transportation.gov/airconsumer/airline-cancellation-delay-dashboard",
+        "https://www.federalregister.gov/documents/2024/04/26/2024-07177/refunds-and-other-consumer-protections",
       ],
     },
   ],
@@ -43,7 +43,7 @@ const CATEGORY_SAMPLES = {
       ],
       referenceUrls: [
         "https://www.transportation.gov/lost-delayed-or-damaged-baggage",
-        "https://www.transportation.gov/individuals/aviation-consumer-protection/refunds",
+        "https://www.iata.org/en/programs/ops-infra/baggage/",
       ],
     },
     {
@@ -53,17 +53,17 @@ const CATEGORY_SAMPLES = {
       ],
       referenceUrls: [
         "https://www.transportation.gov/lost-delayed-or-damaged-baggage",
-        "https://www.transportation.gov/individuals/aviation-consumer-protection/refunds",
+        "https://www.iata.org/en/programs/ops-infra/baggage/",
       ],
     },
     {
       label: "Damaged Luggage Reimbursement — Sample 3",
       evidenceUrls: [
-        "https://www.transportation.gov/briefing-room/emirates-fined-improperly-limiting-reimbursements-delayed-baggage",
+        "https://www.findlaw.com/consumer/travel-rules-and-rights/lost-baggage-compensation-and-the-law.html",
       ],
       referenceUrls: [
-        "https://www.transportation.gov/lost-delayed-or-damaged-baggage",
-        "https://www.transportation.gov/individuals/aviation-consumer-protection/refunds",
+        "https://www.transportation.gov/briefing-room/emirates-fined-improperly-limiting-reimbursements-delayed-baggage",
+        "https://www.iata.org/en/programs/ops-infra/baggage/",
       ],
     },
   ],
@@ -75,28 +75,28 @@ const CATEGORY_SAMPLES = {
         "https://www.usa.gov/travel-advisory",
       ],
       referenceUrls: [
+        "https://www.weather.gov/",
         "https://travel.state.gov/en/international-travel/travel-advisories.html",
-        "https://www.ftc.gov/enforcement/refunds",
       ],
     },
     {
       label: "International Schedule Modification — Sample 2",
       evidenceUrls: [
-        "https://travel.state.gov/en/international-travel.html",
+        "https://www.usa.gov/visas-and-passports",
       ],
       referenceUrls: [
-        "https://travel.state.gov/en/international-travel/travel-advisories.html",
-        "https://www.ftc.gov/enforcement/refunds",
+        "https://www.weather.gov/safety/",
+        "https://travel.state.gov/en/international-travel.html",
       ],
     },
     {
       label: "Personal Travel Emergency Cancellation — Sample 3",
       evidenceUrls: [
-        "https://www.state.gov/travelers",
+        "https://www.usa.gov/disaster-financial-help",
       ],
       referenceUrls: [
+        "https://www.weather.gov/",
         "https://travel.state.gov/en/international-travel/travel-advisories.html",
-        "https://www.ftc.gov/enforcement/refunds",
       ],
     },
   ],
@@ -105,31 +105,31 @@ const CATEGORY_SAMPLES = {
     {
       label: "Overseas Medical Emergency Care — Sample 1",
       evidenceUrls: [
-        "https://www.cdc.gov/yellow-book/index.html",
+        "https://medlineplus.gov/travelershealth.html",
       ],
       referenceUrls: [
-        "https://wwwnc.cdc.gov/travel",
-        "https://wwwnc.cdc.gov/travel/notices",
+        "https://www.who.int/travel-advice",
+        "https://www.cdc.gov/travel/index.html",
       ],
     },
     {
       label: "Travel Outbreak Health Advisory — Sample 2",
       evidenceUrls: [
-        "https://www.cdc.gov/yellow-book/hcp/preparing-international-travelers/travel-medicine-resources-for-healthcare-professionals.html",
+        "https://medlineplus.gov/infections.html",
       ],
       referenceUrls: [
-        "https://wwwnc.cdc.gov/travel",
-        "https://wwwnc.cdc.gov/travel/notices",
+        "https://www.who.int/emergencies/disease-outbreak-news",
+        "https://www.cdc.gov/travel/notices",
       ],
     },
     {
       label: "Urgent Outpatient Overseas Admission — Sample 3",
       evidenceUrls: [
-        "https://wwwnc.cdc.gov/travel/page/traveler-information-center",
+        "https://medlineplus.gov/emergencyandfirefighters.html",
       ],
       referenceUrls: [
-        "https://wwwnc.cdc.gov/travel",
-        "https://wwwnc.cdc.gov/travel/notices",
+        "https://www.who.int/health-topics/travel-and-health",
+        "https://www.cdc.gov/travel/page/traveler-information-center",
       ],
     },
   ],
@@ -142,17 +142,27 @@ const CATEGORY_SAMPLES = {
       ],
       referenceUrls: [
         "https://www.cdc.gov/heads-up/data/index.html",
-        "https://www.cdc.gov/mmwr/volumes/68/wr/mm6820a6.htm",
+        "https://www.who.int/news-room/fact-sheets/detail/injuries-and-violence",
       ],
     },
     {
       label: "Competitive Sports Concussion — Sample 2",
       evidenceUrls: [
-        "https://archive.cdc.gov/www_cdc_gov/media/pressrel/r030702a.htm",
+        "https://www.chop.edu/centers-programs/injury-prevention-program",
       ],
       referenceUrls: [
-        "https://www.cdc.gov/heads-up/data/index.html",
+        "https://www.cdc.gov/heads-up/about/index.html",
+        "https://www.who.int/news-room/fact-sheets/detail/injuries-and-violence",
+      ],
+    },
+    {
+      label: "Match-Play Acute Injury — Sample 3",
+      evidenceUrls: [
+        "https://www.chop.edu/health-resources/sports-injury-prevention",
+      ],
+      referenceUrls: [
         "https://www.cdc.gov/mmwr/volumes/68/wr/mm6820a6.htm",
+        "https://www.who.int/news-room/fact-sheets/detail/injuries-and-violence",
       ],
     },
   ],
@@ -161,21 +171,21 @@ const CATEGORY_SAMPLES = {
     {
       label: "Rental Vehicle Collision Damage — Sample 1",
       evidenceUrls: [
-        "https://search.ftc.gov/news-events/news/press-releases/1996/12/collision-damage-waiver-insurance-may-benefit-consumers",
+        "https://www.123carrental.com/en/us-car-rental-rights",
       ],
       referenceUrls: [
-        "https://consumer.ftc.gov/articles/renting-car",
+        "https://www.nhtsa.gov/",
         "https://www.ftc.gov/enforcement/refunds",
       ],
     },
     {
       label: "Collision Damage Waiver Dispute — Sample 2",
       evidenceUrls: [
-        "https://www.ftc.gov/news-events/news/press-releases/1996/03/budget-rent-car",
+        "https://www.123carrental.com/en/us-car-rental-rights",
       ],
       referenceUrls: [
+        "https://www.nhtsa.gov/road-safety",
         "https://consumer.ftc.gov/articles/renting-car",
-        "https://www.ftc.gov/enforcement/refunds",
       ],
     },
     {
@@ -184,8 +194,8 @@ const CATEGORY_SAMPLES = {
         "https://www.123carrental.com/en/us-car-rental-rights",
       ],
       referenceUrls: [
-        "https://consumer.ftc.gov/articles/renting-car",
-        "https://www.ftc.gov/enforcement/refunds",
+        "https://www.nhtsa.gov/equipment/tires",
+        "https://www.ftc.gov/news-events/topics/consumer-finance",
       ],
     },
   ],
@@ -194,31 +204,31 @@ const CATEGORY_SAMPLES = {
     {
       label: "Official Concert Cancellation Notice — Sample 1",
       evidenceUrls: [
-        "https://www.federalregister.gov/documents/2025/01/10/2024-30293/trade-regulation-rule-on-unfair-or-deceptive-fees",
+        "https://www.britannica.com/money/junk-fees-rule",
       ],
       referenceUrls: [
+        "https://www.federalregister.gov/documents/2025/01/10/2024-30293/trade-regulation-rule-on-unfair-or-deceptive-fees",
         "https://www.ftc.gov/news-events/news/press-releases/2024/12/federal-trade-commission-announces-bipartisan-rule-banning-junk-ticket-hotel-fees",
-        "https://consumer.ftc.gov/search-terms/refunds",
       ],
     },
     {
       label: "Event Refund Non-Fulfillment — Sample 2",
       evidenceUrls: [
-        "https://www.britannica.com/money/junk-fees-rule",
+        "https://www.britannica.com/money/Federal-Trade-Commission",
       ],
       referenceUrls: [
-        "https://www.ftc.gov/news-events/news/press-releases/2024/12/federal-trade-commission-announces-bipartisan-rule-banning-junk-ticket-hotel-fees",
-        "https://consumer.ftc.gov/search-terms/refunds",
+        "https://www.federalregister.gov/documents/2025/01/10/2024-30293/trade-regulation-rule-on-unfair-or-deceptive-fees",
+        "https://www.ftc.gov/news-events/topics/consumer-protection",
       ],
     },
     {
       label: "Event Ticket Fee Dispute — Sample 3",
       evidenceUrls: [
-        "https://consumer.ftc.gov/consumer-alerts/2026/04/did-you-buy-tickets-stubhub-between-may-12-14-last-year",
+        "https://www.britannica.com/topic/ticket",
       ],
       referenceUrls: [
-        "https://www.ftc.gov/news-events/news/press-releases/2024/12/federal-trade-commission-announces-bipartisan-rule-banning-junk-ticket-hotel-fees",
-        "https://consumer.ftc.gov/search-terms/refunds",
+        "https://www.federalregister.gov/",
+        "https://www.ftc.gov/enforcement/refunds",
       ],
     },
   ],
