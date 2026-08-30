@@ -353,6 +353,37 @@ const hostOnAllowlist = (host, allowed) => {
   });
 };
 
+const toStringList = (val) => {
+  if (Array.isArray(val)) return val.map(String);
+  if (val && typeof val === 'object') {
+    if (typeof val.values === 'function') {
+      try { return [...val.values()].map(String); } catch { /* ignore */ }
+    }
+    const keys = Object.keys(val);
+    if (keys.length > 0 && keys.every((k) => /^\d+$/.test(k))) {
+      return keys.sort((a, b) => Number(a) - Number(b)).map((k) => String(val[k]));
+    }
+  }
+  return [];
+};
+
+const hostsFromUrls = (urls) => {
+  const hosts = [];
+  for (const url of urls) {
+    try {
+      const host = extractHost(url);
+      if (!hosts.some((existing) => hostsOverlap(host, existing))) hosts.push(host);
+    } catch { /* skip invalid */ }
+  }
+  return hosts;
+};
+
+const sameAddress = (a, b) => {
+  const left = String(a || '').trim().toLowerCase();
+  const right = String(b || '').trim().toLowerCase();
+  return left.length >= 40 && right.length >= 40 && left === right;
+};
+
 const validateClaimantEvidenceOnly = (evidenceUrls, allowedHosts) => {
   const allowed = (allowedHosts || []).map(String).filter(Boolean);
   if (allowed.length < 2) {
@@ -387,7 +418,7 @@ const FreeGasNotice = ({ style }) => (
 export default function App() {
   // Config & State
   const [account, setAccount] = useState(null);
-  const [courtAddress, setCourtAddress] = useState(import.meta.env.VITE_CONTRACT_ADDRESS || import.meta.env.VITE_CLAIM_COURT_ADDRESS || '0x4cdF0B6F0E3A1198F15a76e5391FB07b67E041f1');
+  const [courtAddress, setCourtAddress] = useState(CONTRACT_ADDRESS || import.meta.env.VITE_CONTRACT_ADDRESS || import.meta.env.VITE_CLAIM_COURT_ADDRESS || '');
 
   const [activeTab, setActiveTab] = useState('pools'); // 'pools' | 'claims' | 'submit' | 'disputed'
   const [pools, setPools] = useState([]);
@@ -577,6 +608,10 @@ export default function App() {
         if (pool && pool.coverage_type && String(pool.coverage_type).trim() !== '') {
           consecutiveEmptyPools = 0;
           const bal = await readContractState('get_pool_balance', [pId], targetAddr);
+          const operator = String(pool.operator || '');
+          const authUrls = toStringList(pool.authoritative_source_urls);
+          let hosts = toStringList(pool.allowed_source_hosts);
+          if (hosts.length < 2 && authUrls.length > 0) hosts = hostsFromUrls(authUrls);
           let enrolled = false;
           if (account) {
             try {
@@ -584,17 +619,18 @@ export default function App() {
             } catch {
               enrolled = false;
             }
+            if (!enrolled && sameAddress(operator, account)) enrolled = true;
           }
           loadedPools.push({
             id: pId,
             coverage_type: String(pool.coverage_type),
-            operator: String(pool.operator || '0xOperator'),
+            operator,
             max_payout_per_claim: toWeiString(pool.max_payout_per_claim),
             pool_balance: toWeiString(bal || pool.pool_balance),
             active: Boolean(pool.active !== false),
-            criteria: Array.isArray(pool.criteria) ? pool.criteria.map(String) : [],
-            allowed_source_hosts: Array.isArray(pool.allowed_source_hosts) ? pool.allowed_source_hosts.map(String) : [],
-            authoritative_source_urls: Array.isArray(pool.authoritative_source_urls) ? pool.authoritative_source_urls.map(String) : [],
+            criteria: toStringList(pool.criteria),
+            allowed_source_hosts: hosts,
+            authoritative_source_urls: authUrls,
             enrolled
           });
         } else {
@@ -647,6 +683,20 @@ export default function App() {
   useEffect(() => {
     loadContractData();
   }, [courtAddress, account]);
+
+  useEffect(() => {
+    if (!pools.length) return;
+    const current = pools.find((p) => String(p.id) === String(newClaim.pool_id) && !isDeprecatedPool(p.id));
+    if (current) return;
+    const first = pools.find((p) => !isDeprecatedPool(p.id));
+    if (!first) return;
+    const capWei = BigInt(first.max_payout_per_claim || '1000000000000000000000');
+    setNewClaim((prev) => ({
+      ...prev,
+      pool_id: first.id,
+      amount: prev.amount || formatWeiToGen(capWei / 2n)
+    }));
+  }, [pools]);
 
   // Handle Create Pool (Template Guided Flow) - On-Chain Finalized Execution
   const handleCreatePoolSubmit = async (e) => {
@@ -864,8 +914,13 @@ export default function App() {
     }
 
     const targetPool = (pools && pools.length > 0)
-      ? (pools.find(p => String(p.id) === String(newClaim?.pool_id)) || pools[0])
-      : { id: '1', coverage_type: 'Flight Cancellation & Delay', max_payout_per_claim: '1000000000000000000000' };
+      ? (pools.find(p => String(p.id) === String(newClaim?.pool_id) && !isDeprecatedPool(p.id)) || pools.find(p => !isDeprecatedPool(p.id)))
+      : null;
+    if (!targetPool) {
+      alert("Create a policy pool on this contract first, then file a claim.");
+      setActiveTab('pools');
+      return;
+    }
 
     if (account && targetPool && targetPool.enrolled === false) {
       alert("Your wallet is not enrolled on this policy pool. Ask the pool operator to enroll your address before filing a claim.");
@@ -1562,6 +1617,23 @@ export default function App() {
             </div>
 
             <form onSubmit={handleSubmitClaim}>
+              {pools.filter((p) => !isDeprecatedPool(p.id)).length === 0 && (
+                <div className="form-group" style={{
+                  padding: '14px 16px',
+                  borderRadius: '10px',
+                  background: 'rgba(56,189,248,0.08)',
+                  border: '1px solid rgba(56,189,248,0.25)',
+                  marginBottom: '16px'
+                }}>
+                  <div style={{ fontSize: '14px', fontWeight: 700, marginBottom: '6px' }}>No enrolled policy pool on this contract yet</div>
+                  <div style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '12px' }}>
+                    Contract `{courtAddress}` is empty. Create a policy pool first (that writes the two authoritative source URLs and enrolls your operator wallet). Then come back here to file a claim.
+                  </div>
+                  <button type="button" className="btn btn-primary" onClick={() => setActiveTab('pools')}>
+                    Go to Policy Pools
+                  </button>
+                </div>
+              )}
               {/* Select Policy Pool (Clickable Cards) */}
               <div className="form-group">
                 <label className="form-label" style={{ marginBottom: '10px' }}>Select Policy Pool *</label>
@@ -1601,9 +1673,9 @@ export default function App() {
 
               {/* Incident Scenario Radio Options */}
               {(() => {
-                const targetPool = (pools && pools.length > 0)
-                  ? (pools.find(p => String(p.id) === String(newClaim.pool_id)) || pools[0])
-                  : { id: '0', coverage_type: 'Flight Cancellation & Delay', max_payout_per_claim: '1000000000000000000000', pool_balance: '15000000000000000000000' };
+                const realPools = (pools || []).filter((p) => !isDeprecatedPool(p.id));
+                const targetPool = realPools.find(p => String(p.id) === String(newClaim.pool_id)) || realPools[0];
+                if (!targetPool) return null;
                 const coverageType = targetPool?.coverage_type || 'Flight Cancellation & Delay';
                 const scenarios = PRESET_INCIDENT_SCENARIOS[coverageType] || [
                   "Official incident claim matching policy criteria"

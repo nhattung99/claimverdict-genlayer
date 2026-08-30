@@ -1,7 +1,8 @@
 import { createClient } from 'genlayer-js';
+import { studionet as officialStudionet } from 'genlayer-js/chains';
 import { toHex, toRlp } from 'viem';
 
-export const studionet = {
+export const studionet = officialStudionet || {
   id: 61999,
   name: 'GenLayer Studionet',
   rpcUrl: 'https://studio.genlayer.com/api',
@@ -17,14 +18,15 @@ export const CONTRACT_ADDRESS = '0x4cdF0B6F0E3A1198F15a76e5391FB07b67E041f1';
 export const getGenlayerClient = () => {
   try {
     return createClient({
-      chain: studionet,
-      endpoint: 'https://studio.genlayer.com/api'
+      chain: officialStudionet || studionet
     });
   } catch (err) {
     console.warn("GenLayer client initialization fallback:", err);
     return null;
   }
 };
+
+const isHexStub = (val) => typeof val === 'string' && /^0x[0-9a-fA-F]+$/.test(val);
 
 // Base-Unit (Wei) Converter Helpers: 1 GEN = 10^18 base units (wei)
 const WEI_PER_GEN = 1000000000000000000n; // 10^18
@@ -272,11 +274,13 @@ export const readContractState = async (functionName, args = [], targetAddress =
   try {
     const client = getGenlayerClient();
     if (client && client.readContract) {
-      return await client.readContract({
+      const result = await client.readContract({
         address: addr,
         functionName,
         args
       });
+      if (isHexStub(result)) return null;
+      return result;
     }
   } catch (err) {
     console.warn(`readContract ${functionName} note:`, err);
