@@ -35,7 +35,8 @@ import {
   formatWeiToGen,
   sanitizeGenInput,
   toWeiString,
-  toPercentInt
+  toPercentInt,
+  formatWriteError
 } from './genlayerClient';
 import { SAMPLE_CLAIM_DATA } from './data/sampleClaimData';
 import { isDeprecatedPool } from './data/deprecatedPools';
@@ -440,7 +441,7 @@ export default function App() {
   const [createStep, setCreateStep] = useState(1);
   const [selectedCategory, setSelectedCategory] = useState(PRESET_CATEGORIES[0]);
   const [selectedCriteriaMap, setSelectedCriteriaMap] = useState({ 0: true, 1: true, 2: true });
-  const [initialDepositAmount, setInitialDepositAmount] = useState('10');
+  const [initialDepositAmount, setInitialDepositAmount] = useState('0');
   const [customCriterionInput, setCustomCriterionInput] = useState('');
   const [showCustomInput, setShowCustomInput] = useState(false);
   const [customCriteriaList, setCustomCriteriaList] = useState([]);
@@ -563,7 +564,7 @@ export default function App() {
       criteria: cat.criteria_presets,
       max_payout: cat.default_max_payout
     });
-    setInitialDepositAmount('10');
+    setInitialDepositAmount('0');
   };
 
   // Toggle Criterion Checkbox
@@ -724,7 +725,7 @@ export default function App() {
       return;
     }
 
-    const depositWei = parseGenToWei(initialDepositAmount);
+    const depositWei = parseGenToWei(initialDepositAmount || '0');
     const depositHex = depositWei > 0n ? ('0x' + depositWei.toString(16)) : '0x0';
 
     setTxMessage({
@@ -753,7 +754,14 @@ export default function App() {
         detail: 'Validators are processing block inclusion. Please do not close window.'
       });
 
-      await waitForFinalizedTx(txHash);
+      try {
+        await waitForFinalizedTx(txHash);
+      } catch (waitErr) {
+        const waitMsg = String(waitErr?.message || '').toLowerCase();
+        if (waitMsg.includes('reverted') || waitMsg.includes('execution failed')) {
+          throw waitErr;
+        }
+      }
 
       setTxMessage({
         status: 'reading',
@@ -763,13 +771,13 @@ export default function App() {
       });
 
       let loaded = { pools: [] };
-      for (let attempt = 0; attempt < 8; attempt++) {
+      for (let attempt = 0; attempt < 12; attempt++) {
         loaded = await loadContractData();
         if (loaded.pools.length > 0) break;
-        await new Promise((r) => setTimeout(r, 2000));
+        await new Promise((r) => setTimeout(r, 2500));
       }
       if (loaded.pools.length === 0) {
-        throw new Error("Transaction accepted but no pool appeared. Use a smaller initial deposit if the wallet is short on GEN, then retry Create Policy Pool.");
+        throw new Error("Transaction mined but get_pool still returned empty. Wait a few seconds and refresh Policy Pools. If it stays empty, retry with 0 GEN deposit.");
       }
 
       setShowCreatePoolModal(false);
@@ -783,13 +791,13 @@ export default function App() {
       });
     } catch (err) {
       console.warn("Create pool error:", err);
-      // DO NOT update UI state on error!
+      const friendly = formatWriteError(err);
       setTxMessage({
         status: 'error',
-        title: err.message.includes('rejected') || err.message.includes('cancelled') || err.message.includes('User rejected')
+        title: friendly.toLowerCase().includes('cancelled')
           ? 'Transaction Cancelled.'
-          : 'Pool Creation Failed: ' + err.message,
-        detail: 'No local state changes applied.'
+          : 'Pool Creation Failed: ' + friendly,
+        detail: 'No local state changes applied. Confirm MetaMask is on GenLayer Studionet and the wallet has a little GEN for gas.'
       });
     } finally {
       setTimeout(() => setTxMessage(null), 8000);
@@ -2121,7 +2129,7 @@ export default function App() {
                 <div className="form-group">
                   <label className="form-label">Initial Pool Deposit (GEN) *</label>
                   <div className="preset-chips-row">
-                    {['10', '100', ...selectedCategory.deposit_presets].map(val => (
+                    {['0', '1', '10', '100'].map(val => (
                       <button 
                         key={val}
                         type="button"
@@ -2136,14 +2144,13 @@ export default function App() {
                     type="text"
                     inputMode="decimal"
                     autoComplete="off"
-                    placeholder="Enter initial pool deposit amount" 
+                    placeholder="0 is allowed — fund the pool later" 
                     className="form-input"
                     value={initialDepositAmount}
                     onChange={e => setInitialDepositAmount(sanitizeGenInput(e.target.value))}
-                    required
                   />
                   <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '8px' }}>
-                    Studio wallets usually hold a small GEN balance. Start with 10 GEN so create can succeed, then fund more later.
+                    Use 0 GEN if the Studio faucet balance is small. You can deposit more after the pool exists.
                   </p>
                 </div>
 

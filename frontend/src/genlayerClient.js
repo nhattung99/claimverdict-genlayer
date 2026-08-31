@@ -16,12 +16,27 @@ export const studionet = officialStudionet || {
 
 export const CONTRACT_ADDRESS = '0x4cdF0B6F0E3A1198F15a76e5391FB07b67E041f1';
 
+const toAddress = (account) => {
+  if (!account) return '';
+  if (typeof account === 'string') return account;
+  return account.address || '';
+};
+
+// MetaMask routing in genlayer-js only fires when client.account is a hex string
+// (typeof !== "object"). writeContract encoding needs { address } or _sender is undefined.
+const toWriteAccount = (account) => {
+  const address = toAddress(account);
+  if (!address) return null;
+  return { address };
+};
+
 export const getGenlayerClient = (account) => {
   try {
     const cfg = {
       chain: officialStudionet || studionet
     };
-    if (account) cfg.account = account;
+    const address = toAddress(account);
+    if (address) cfg.account = address;
     if (typeof window !== 'undefined' && window.ethereum) {
       cfg.provider = window.ethereum;
     }
@@ -30,6 +45,31 @@ export const getGenlayerClient = (account) => {
     console.warn("GenLayer client initialization fallback:", err);
     return null;
   }
+};
+
+const asPlain = (val) => {
+  if (val instanceof Map) {
+    const obj = {};
+    for (const [k, v] of val.entries()) obj[String(k)] = asPlain(v);
+    return obj;
+  }
+  if (Array.isArray(val)) return val.map(asPlain);
+  return val;
+};
+
+export const formatWriteError = (err) => {
+  const msg = String(err?.shortMessage || err?.details || err?.message || err || '');
+  const low = msg.toLowerCase();
+  if (low.includes('user rejected') || low.includes('user denied') || low.includes('rejected the request')) {
+    return 'Transaction cancelled in MetaMask.';
+  }
+  if (low.includes('insufficient') || low.includes('funds')) {
+    return 'Not enough GEN for the deposit plus gas. Use 0 GEN initial deposit, then fund the pool later.';
+  }
+  if (low.includes('invalid address') || (low.includes('undefined') && low.includes('address'))) {
+    return 'Wallet address was not attached. Reconnect MetaMask on GenLayer Studionet and retry.';
+  }
+  return msg || 'Write transaction failed.';
 };
 
 const toValueBigInt = (value) => {
@@ -215,6 +255,34 @@ export const encodeGenLayerCalldata = (method, args = []) => {
   return toRlp([toHex(new Uint8Array(arr))]);
 };
 
+const STUDIO_RPC = 'https://studio.genlayer.com/api';
+
+const studioRpc = async (method, params = []) => {
+  const res = await fetch(STUDIO_RPC, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: Date.now(), method, params })
+  }).then((r) => r.json());
+  if (res?.error) throw new Error(res.error.message || JSON.stringify(res.error));
+  return res?.result;
+};
+
+const waitForStudioEvmReceipt = async (txHash, maxRetries = 24, intervalMs = 2000) => {
+  for (let i = 0; i < maxRetries; i++) {
+    const receipt = await studioRpc('eth_getTransactionReceipt', [txHash]).catch(() => null);
+    if (receipt) {
+      const status = receipt.status;
+      if (status === '0x0' || status === 0 || status === '0') {
+        throw new Error('Studionet transaction reverted. Contract state was not changed.');
+      }
+      await new Promise((r) => setTimeout(r, 1500));
+      return receipt;
+    }
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+  throw new Error(`Timed out waiting for Studionet receipt ${txHash}.`);
+};
+
 // Execute Write Transaction on GenLayer via genlayer-js + MetaMask
 export const sendContractTransaction = async ({ from, to = CONTRACT_ADDRESS, functionName, args = [], value = '0x0' }) => {
   if (typeof window === 'undefined' || !window.ethereum) {
@@ -222,58 +290,65 @@ export const sendContractTransaction = async ({ from, to = CONTRACT_ADDRESS, fun
   }
 
   const accs = await window.ethereum.request({ method: 'eth_requestAccounts' });
-  const sender = from || (accs && accs[0]);
+  const sender = toAddress(from) || (accs && accs[0]);
   if (!sender) {
     throw new Error("No connected wallet account found. Please connect MetaMask to execute write actions.");
   }
+
+  // Do not call client.connect('studionet'): it requests a MetaMask Snap and blocks regular wallets.
+  await switchToGenlayerStudionet();
 
   const client = getGenlayerClient(sender);
   if (!client || !client.writeContract) {
     throw new Error("GenLayer write client is not available.");
   }
-  if (typeof client.connect === 'function') {
-    try {
-      await client.connect('studionet');
-    } catch (err) {
-      console.warn("client.connect note:", err);
-      await switchToGenlayerStudionet();
-    }
-  } else {
-    await switchToGenlayerStudionet();
-  }
 
-  return await client.writeContract({
-    account: sender,
-    address: to,
-    functionName,
-    args,
-    value: toValueBigInt(value)
-  });
+  const writeAccount = toWriteAccount(sender);
+  try {
+    return await client.writeContract({
+      account: writeAccount,
+      address: to,
+      functionName,
+      args,
+      value: toValueBigInt(value)
+    });
+  } catch (err) {
+    throw new Error(formatWriteError(err));
+  }
 };
 
-// Wait until GenLayer consensus accepts the tx AND the contract method actually ran
-export const waitForFinalizedTx = async (txHash, maxRetries = 40, intervalMs = 2500) => {
-  const client = getGenlayerClient();
-  if (!client || !client.waitForTransactionReceipt) {
-    throw new Error("Cannot wait for transaction: GenLayer client is unavailable.");
+// On Studionet, writeContract returns the EVM hash. Consensus status polling does not map that hash.
+export const waitForFinalizedTx = async (txHash, maxRetries = 24, intervalMs = 2000) => {
+  if (!txHash) {
+    throw new Error("Missing transaction hash.");
   }
 
-  const receipt = await client.waitForTransactionReceipt({
-    hash: txHash,
-    status: TransactionStatus.ACCEPTED,
-    retries: maxRetries,
-    interval: intervalMs
-  });
-
-  const execName = receipt?.txExecutionResultName || receipt?.executionResult || receipt?.txExecutionResult;
-  if (execName === ExecutionResult.FINISHED_WITH_ERROR) {
-    const detail = receipt?.txExecutionError || receipt?.stderr || receipt?.verdict_reason || '';
-    throw new Error("Contract execution failed. State was not changed. " + String(detail));
+  try {
+    return await waitForStudioEvmReceipt(txHash, maxRetries, intervalMs);
+  } catch (studioErr) {
+    const studioMsg = String(studioErr?.message || '').toLowerCase();
+    if (studioMsg.includes('reverted')) throw studioErr;
+    const client = getGenlayerClient();
+    if (!client || !client.waitForTransactionReceipt) {
+      throw studioErr;
+    }
+    try {
+      const receipt = await client.waitForTransactionReceipt({
+        hash: txHash,
+        status: TransactionStatus.ACCEPTED,
+        retries: Math.min(maxRetries, 12),
+        interval: intervalMs
+      });
+      const execName = receipt?.txExecutionResultName || receipt?.executionResult || receipt?.txExecutionResult;
+      if (execName === ExecutionResult.FINISHED_WITH_ERROR) {
+        const detail = receipt?.txExecutionError || receipt?.stderr || receipt?.verdict_reason || '';
+        throw new Error("Contract execution failed. State was not changed. " + String(detail));
+      }
+      return receipt;
+    } catch {
+      throw studioErr;
+    }
   }
-  if (execName === ExecutionResult.NOT_VOTED) {
-    throw new Error("Transaction was not fully executed yet. Wait and refresh.");
-  }
-  return receipt;
 };
 
 // Read Contract View Methods (`get_pool`, `get_claim`, `get_pool_balance`) using selected contract address
@@ -289,7 +364,7 @@ export const readContractState = async (functionName, args = [], targetAddress =
         stateStatus: 'accepted'
       });
       if (isHexStub(result)) return null;
-      return result;
+      return asPlain(result);
     }
   } catch (err) {
     console.warn(`readContract ${functionName} note:`, err);
